@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { @apply bg-felt-950 text-cream-100; }
+  body { @apply font-body antialiased; }
+}
+
+@layer components {
+  /* ── Suit colours ──────────────────────────────── */
+  .suit-spade   { @apply text-cream-100; }
+  .suit-club    { @apply text-cream-100; }
+  .suit-heart   { @apply text-red-400; }
+  .suit-diamond { @apply text-red-400; }
+
+  /* ── Gold border card ───────────────────────────── */
+  .card-felt {
+    @apply bg-felt-800 border border-gold-500/30 rounded-xl shadow-card;
+  }
+
+  /* ── Primary button ─────────────────────────────── */
+  .btn-gold {
+    @apply bg-gold-400 hover:bg-gold-300 text-felt-950 font-semibold
+           px-5 py-2.5 rounded-lg transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  /* ── Ghost button ───────────────────────────────── */
+  .btn-ghost {
+    @apply border border-gold-500/40 hover:border-gold-400 text-cream-200
+           hover:text-gold-300 px-5 py-2.5 rounded-lg transition-all duration-150;
+  }
+
+  /* ── Input ──────────────────────────────────────── */
+  .input-felt {
+    @apply bg-felt-700 border border-gold-500/30 focus:border-gold-400
+           text-cream-100 placeholder-cream-400/40 rounded-lg px-4 py-2.5
+           outline-none transition-colors w-full;
+  }
+
+  /* ── Status badge ───────────────────────────────── */
+  .badge-setup     { @apply bg-felt-700 text-cream-400 text-xs px-2 py-0.5 rounded-full; }
+  .badge-active    { @apply bg-green-900/60 text-green-400 text-xs px-2 py-0.5 rounded-full; }
+  .badge-completed { @apply bg-gold-500/20 text-gold-300 text-xs px-2 py-0.5 rounded-full; }
+}
+
+/* ── Subtle scanline texture on cards ──────────────── */
+.card-felt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,0.04) 3px,
+    rgba(0,0,0,0.04) 4px
+  );
+  pointer-events: none;
+}
+
+/* ── Animated "live" pulse dot ─────────────────────── */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+.live-dot { animation: live-pulse 1.4s ease-in-out infinite; }
+
+/* Smooth page fade-in */
+#root { animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
