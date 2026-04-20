@@ -1,0 +1,274 @@
+'use strict';
+// routes/play.js — Phase 4b: PIN verification added to /join
+const router = require('express').Router({ mergeParams: true });
+const jwt    = require('jsonwebtoken');
+const db     = require('../db');
+const { requirePlayerAuth } = require('../middleware/playerAuth');
+const { calculateRawScore, calculateMatchpoints } = require('../scoring-engine');
+
+// ── GET /api/play/:token ──────────────────────────────────────
+router.get('/', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name, date, tables_count, num_rounds, num_boards,
+              status, results_released, has_phantom
+       FROM sessions WHERE invite_token = $1`, [req.params.token]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Session not found' });
+    if (rows[0].status === 'archived') return res.status(410).json({ error: 'Session archived' });
+    res.json(rows[0]);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── GET /api/play/:token/pairs ────────────────────────────────
+// Returns pair list WITHOUT PINs (director sees PINs in SetupPairsPage)
+router.get('/pairs', async (req, res) => {
+  try {
+    const { rows: sess } = await db.query(
+      `SELECT id FROM sessions WHERE invite_token = $1`, [req.params.token]
+    );
+    if (!sess[0]) return res.status(404).json({ error: 'Session not found' });
+    const { rows } = await db.query(
+      `SELECT pair_number, player1_name, player2_name
+       FROM session_pairs
+       WHERE session_id = $1 AND is_phantom = FALSE
+       ORDER BY pair_number`, [sess[0].id]
+    );
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── POST /api/play/:token/join ────────────────────────────────
+// Now requires PIN verification
+router.post('/join', async (req, res) => {
+  const { pairNumber, pin } = req.body ?? {};
+  if (!pairNumber) return res.status(400).json({ error: 'pairNumber required' });
+  if (!pin)        return res.status(400).json({ error: 'PIN required' });
+
+  try {
+    const { rows: sess } = await db.query(
+      `SELECT id, name, status FROM sessions WHERE invite_token = $1`, [req.params.token]
+    );
+    const session = sess[0];
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (session.status === 'archived') return res.status(410).json({ error: 'Session archived' });
+    if (session.status === 'setup')    return res.status(400).json({ error: 'Session not started yet — check with your director' });
+
+    // Verify pair + PIN
+    const { rows: pairRows } = await db.query(
+      `SELECT pair_number, player1_name, player2_name, pin
+       FROM session_pairs
+       WHERE session_id = $1 AND pair_number = $2 AND is_phantom = FALSE`,
+      [session.id, pairNumber]
+    );
+    if (!pairRows[0]) return res.status(404).json({ error: 'Pair not found' });
+
+    // PIN check — constant time comparison
+    if (String(pairRows[0].pin).trim() !== String(pin).trim()) {
+      return res.status(401).json({ error: 'Incorrect PIN. Please check with your director.' });
+    }
+
+    const playerToken = jwt.sign(
+      { role: 'player', sessionId: session.id, pairNumber: Number(pairNumber), sessionToken: req.params.token },
+      process.env.JWT_ACCESS_SECRET,
+      { expiresIn: '12h' }
+    );
+
+    res.json({
+      playerToken,
+      pair: pairRows[0],
+      session: { id: session.id, name: session.name },
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── GET /api/play/:token/schedule ─────────────────────────────
+router.get('/schedule', requirePlayerAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT br.id, br.round, br.table_number, br.board_number,
+              br.ns_pair, br.ew_pair, br.is_bye,
+              br.declarer, br.level, br.suit, br.doubled, br.tricks, br.entered_at,
+              ns.player1_name AS ns_p1, ns.player2_name AS ns_p2,
+              ew.player1_name AS ew_p1, ew.player2_name AS ew_p2
+       FROM board_results br
+       LEFT JOIN session_pairs ns ON ns.session_id = br.session_id AND ns.pair_number = br.ns_pair
+       LEFT JOIN session_pairs ew ON ew.session_id = br.session_id AND ew.pair_number = br.ew_pair
+       WHERE br.session_id = $1 AND (br.ns_pair = $2 OR br.ew_pair = $2) AND br.is_bye = FALSE
+       ORDER BY br.round, br.board_number`,
+      [req.player.sessionId, req.player.pairNumber]
+    );
+
+    const enriched = rows.map(r => ({
+      ...r,
+      side: r.ns_pair === req.player.pairNumber ? 'NS' : 'EW',
+      opponent: r.ns_pair === req.player.pairNumber ? r.ew_pair : r.ns_pair,
+      opponentNames: r.ns_pair === req.player.pairNumber
+        ? [r.ew_p1, r.ew_p2].filter(Boolean).join(' / ') || `Pair ${r.ew_pair}`
+        : [r.ns_p1, r.ns_p2].filter(Boolean).join(' / ') || `Pair ${r.ns_pair}`,
+      // Only show contract if this pair entered it
+      declarer: r.entered_at ? r.declarer : null,
+      level:    r.entered_at ? r.level    : null,
+      suit:     r.entered_at ? r.suit     : null,
+      doubled:  r.entered_at ? r.doubled  : null,
+      tricks:   r.entered_at ? r.tricks   : null,
+    }));
+
+    res.json(enriched);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── PUT /api/play/:token/boards/:resultId ─────────────────────
+router.put('/boards/:resultId', requirePlayerAuth, async (req, res) => {
+  const { declarer, level, suit, doubled = 'none', tricks } = req.body ?? {};
+  if (!declarer || level == null || !suit || tricks == null) {
+    return res.status(400).json({ error: 'declarer, level, suit, tricks are required' });
+  }
+
+  try {
+    const { rows } = await db.query(
+      `SELECT br.*, s.status, s.results_released
+       FROM board_results br JOIN sessions s ON s.id = br.session_id
+       WHERE br.id = $1 AND br.session_id = $2
+         AND (br.ns_pair = $3 OR br.ew_pair = $3) AND br.is_bye = FALSE`,
+      [req.params.resultId, req.player.sessionId, req.player.pairNumber]
+    );
+    if (!rows[0])              return res.status(404).json({ error: 'Board not found or not yours' });
+    if (rows[0].status !== 'active') return res.status(400).json({ error: 'Session is not active' });
+    if (rows[0].results_released)    return res.status(400).json({ error: 'Results already released' });
+
+    const nsScore = calculateRawScore({ declarer, level, suit, doubled, tricks, boardNumber: rows[0].board_number });
+    const { rows: updated } = await db.query(
+      `UPDATE board_results
+       SET declarer=$1,level=$2,suit=$3,doubled=$4,tricks=$5,ns_score=$6,entered_at=NOW()
+       WHERE id=$7 RETURNING *`,
+      [declarer, level, suit, doubled, tricks, nsScore, req.params.resultId]
+    );
+
+    const io = req.app.get('io');
+    if (io) {
+      const bmp = await liveBoardMatchpoints(req.player.sessionId, updated[0].board_number);
+      io.to(`session:${req.player.sessionId}`).emit('result:updated', {
+        result: updated[0], boardMatchpoints: bmp, enteredByPair: req.player.pairNumber,
+      });
+    }
+    res.json({ ok: true, nsScore });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── GET /api/play/:token/standings ────────────────────────────
+router.get('/standings', requirePlayerAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT results_released FROM sessions WHERE id = $1`, [req.player.sessionId]
+    );
+    if (!rows[0]?.results_released) return res.status(403).json({ error: 'Results not yet released' });
+    const standings = await computeFullStandings(req.player.sessionId);
+    res.json(standings);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── GET /api/play/:token/myresults ────────────────────────────
+router.get('/myresults', requirePlayerAuth, async (req, res) => {
+  try {
+    const { rows: s } = await db.query(
+      `SELECT results_released FROM sessions WHERE id = $1`, [req.player.sessionId]
+    );
+    if (!s[0]?.results_released) return res.status(403).json({ error: 'Results not yet released' });
+
+    const { rows } = await db.query(
+      `SELECT br.board_number, br.round, br.table_number, br.ns_pair, br.ew_pair,
+              br.declarer, br.level, br.suit, br.doubled, br.tricks, br.ns_score
+       FROM board_results br
+       WHERE br.session_id = $1 AND (br.ns_pair = $2 OR br.ew_pair = $2)
+       ORDER BY br.board_number`,
+      [req.player.sessionId, req.player.pairNumber]
+    );
+
+    const boardNums = [...new Set(rows.map(r => r.board_number))];
+    const myMP = {};
+    for (const bn of boardNums) {
+      const { rows: all } = await db.query(
+        `SELECT ns_pair, ew_pair, ns_score, is_bye FROM board_results
+         WHERE session_id=$1 AND board_number=$2 AND (entered_at IS NOT NULL OR is_bye=TRUE)`,
+        [req.player.sessionId, bn]
+      );
+      const mp = calculateMatchpoints(
+        all.map(r => ({ pairNS: r.ns_pair, pairEW: r.ew_pair, nsScore: r.ns_score ?? 0, isBye: r.is_bye }))
+      );
+      if (mp[req.player.pairNumber]) myMP[bn] = mp[req.player.pairNumber];
+    }
+
+    res.json(rows.map(r => ({
+      ...r,
+      side:  r.ns_pair === req.player.pairNumber ? 'NS' : 'EW',
+      mp:    myMP[r.board_number]?.mp    ?? null,
+      maxMp: myMP[r.board_number]?.maxMp ?? null,
+    })));
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Helpers ───────────────────────────────────────────────────
+async function liveBoardMatchpoints(sessionId, boardNumber) {
+  const { rows } = await db.query(
+    `SELECT ns_pair, ew_pair, ns_score, is_bye FROM board_results
+     WHERE session_id=$1 AND board_number=$2 AND (entered_at IS NOT NULL OR is_bye=TRUE)`,
+    [sessionId, boardNumber]
+  );
+  return calculateMatchpoints(
+    rows.map(r => ({ pairNS: r.ns_pair, pairEW: r.ew_pair, nsScore: r.ns_score ?? 0, isBye: r.is_bye }))
+  );
+}
+
+async function computeFullStandings(sessionId) {
+  const { rows: pairRows } = await db.query(
+    `SELECT pair_number, player1_name, player2_name FROM session_pairs
+     WHERE session_id=$1 AND is_phantom=FALSE`, [sessionId]
+  );
+  const pairs  = pairRows.map(r => r.pair_number);
+  const totals = {};
+  pairs.forEach(p => { totals[p] = { totalMP: 0, maxMP: 0 }; });
+
+  const { rows: results } = await db.query(
+    `SELECT board_number, ns_pair, ew_pair, ns_score, is_bye FROM board_results
+     WHERE session_id=$1 AND (entered_at IS NOT NULL OR is_bye=TRUE)`, [sessionId]
+  );
+
+  const boardMap = {};
+  for (const r of results) {
+    if (!boardMap[r.board_number]) boardMap[r.board_number] = [];
+    boardMap[r.board_number].push({ pairNS: r.ns_pair, pairEW: r.ew_pair, nsScore: r.ns_score ?? 0, isBye: r.is_bye });
+  }
+  for (const results of Object.values(boardMap)) {
+    const mp = calculateMatchpoints(results);
+    for (const [key, data] of Object.entries(mp)) {
+      const p = Number(key);
+      if (totals[p]) { totals[p].totalMP += data.mp; totals[p].maxMP += data.maxMp; }
+    }
+  }
+
+  const lookup = {};
+  pairRows.forEach(p => { lookup[p.pair_number] = p; });
+
+  const rows = pairs.map(p => ({
+    pairNumber:  p,
+    player1Name: lookup[p]?.player1_name ?? '',
+    player2Name: lookup[p]?.player2_name ?? '',
+    totalMP:     totals[p].totalMP,
+    maxMP:       totals[p].maxMP,
+    percentage:  totals[p].maxMP > 0
+                   ? ((totals[p].totalMP / totals[p].maxMP) * 100).toFixed(2)
+                   : '0.00',
+  }));
+
+  rows.sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage));
+  let rank = 1;
+  for (let i = 0; i < rows.length; i++) {
+    if (i > 0 && rows[i].percentage !== rows[i-1].percentage) rank = i + 1;
+    rows[i].rank = rank;
+  }
+  return rows;
+}
+
+module.exports = router;
+module.exports.computeFullStandings = computeFullStandings;
