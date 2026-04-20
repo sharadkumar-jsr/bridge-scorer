@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://YOUR-SERVER.onrender.com/api/$1" },
+    { "source": "/api/(.*)", "destination": "https://bridge-scorer-server.onrender.com/api/$1" },
     { "source": "/(.*)",     "destination": "/index.html" }
   ]
 }
