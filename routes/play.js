@@ -1,5 +1,5 @@
 'use strict';
-// routes/play.js — Phase 4c: show scores to both pairs, lock once entered
+// routes/play.js — Phase 4d: BYE rounds included in schedule explicitly
 const router = require('express').Router({ mergeParams: true });
 const jwt    = require('jsonwebtoken');
 const db     = require('../db');
@@ -78,6 +78,8 @@ router.post('/join', async (req, res) => {
 });
 
 // ── GET /api/play/:token/schedule ─────────────────────────────
+// Now returns ALL board rows including BYE rows (is_bye=TRUE)
+// so the client can clearly show BYE rounds as greyed out
 router.get('/schedule', requirePlayerAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -89,9 +91,11 @@ router.get('/schedule', requirePlayerAuth, async (req, res) => {
        FROM board_results br
        LEFT JOIN session_pairs ns ON ns.session_id = br.session_id AND ns.pair_number = br.ns_pair
        LEFT JOIN session_pairs ew ON ew.session_id = br.session_id AND ew.pair_number = br.ew_pair
-       WHERE br.session_id = $1 AND (br.ns_pair = $2 OR br.ew_pair = $2) AND br.is_bye = FALSE
+       WHERE br.session_id = $1
+         AND (br.ns_pair = $2 OR br.ew_pair = $2)
        ORDER BY br.round, br.board_number`,
       [req.player.sessionId, req.player.pairNumber]
+      // NOTE: removed AND br.is_bye = FALSE  — now includes BYE rows
     );
 
     const enriched = rows.map(r => ({
@@ -101,15 +105,14 @@ router.get('/schedule', requirePlayerAuth, async (req, res) => {
       opponentNames: r.ns_pair === req.player.pairNumber
         ? [r.ew_p1, r.ew_p2].filter(Boolean).join(' / ') || `Pair ${r.ew_pair}`
         : [r.ns_p1, r.ns_p2].filter(Boolean).join(' / ') || `Pair ${r.ns_pair}`,
-      // Show contract to BOTH pairs once entered by anyone
-      // Before this was hidden from the pair that didn't enter
-      declarer: r.entered_at ? r.declarer : null,
-      level:    r.entered_at ? r.level    : null,
-      suit:     r.entered_at ? r.suit     : null,
-      doubled:  r.entered_at ? r.doubled  : null,
-      tricks:   r.entered_at ? r.tricks   : null,
-      // canEnter = false once anyone has entered — prevents second pair from editing
-      canEnter: !r.entered_at,
+      // Show contract to both pairs once entered — but not for BYE boards
+      declarer: (!r.is_bye && r.entered_at) ? r.declarer : null,
+      level:    (!r.is_bye && r.entered_at) ? r.level    : null,
+      suit:     (!r.is_bye && r.entered_at) ? r.suit     : null,
+      doubled:  (!r.is_bye && r.entered_at) ? r.doubled  : null,
+      tricks:   (!r.is_bye && r.entered_at) ? r.tricks   : null,
+      // canEnter: false for BYE boards or already-entered boards
+      canEnter: !r.is_bye && !r.entered_at,
     }));
 
     res.json(enriched);
@@ -128,13 +131,21 @@ router.put('/boards/:resultId', requirePlayerAuth, async (req, res) => {
       `SELECT br.*, s.status, s.results_released
        FROM board_results br JOIN sessions s ON s.id = br.session_id
        WHERE br.id = $1 AND br.session_id = $2
-         AND (br.ns_pair = $3 OR br.ew_pair = $3) AND br.is_bye = FALSE`,
+         AND (br.ns_pair = $3 OR br.ew_pair = $3)`,
       [req.params.resultId, req.player.sessionId, req.player.pairNumber]
     );
 
     if (!rows[0])                    return res.status(404).json({ error: 'Board not found or not yours' });
     if (rows[0].status !== 'active') return res.status(400).json({ error: 'Session is not active' });
     if (rows[0].results_released)    return res.status(400).json({ error: 'Results already released — no more edits allowed' });
+
+    // Block entry for BYE boards
+    if (rows[0].is_bye) {
+      return res.status(400).json({
+        error: 'This is a BYE round — no score entry required. Average score is awarded automatically.',
+        isBye: true,
+      });
+    }
 
     // Block editing if already entered by anyone
     if (rows[0].entered_at) {
@@ -190,14 +201,14 @@ router.get('/myresults', requirePlayerAuth, async (req, res) => {
 
     const { rows } = await db.query(
       `SELECT br.board_number, br.round, br.table_number, br.ns_pair, br.ew_pair,
-              br.declarer, br.level, br.suit, br.doubled, br.tricks, br.ns_score
+              br.declarer, br.level, br.suit, br.doubled, br.tricks, br.ns_score, br.is_bye
        FROM board_results br
        WHERE br.session_id = $1 AND (br.ns_pair = $2 OR br.ew_pair = $2)
        ORDER BY br.board_number`,
       [req.player.sessionId, req.player.pairNumber]
     );
 
-    const boardNums = [...new Set(rows.map(r => r.board_number))];
+    const boardNums = [...new Set(rows.filter(r => !r.is_bye).map(r => r.board_number))];
     const myMP = {};
     for (const bn of boardNums) {
       const { rows: all } = await db.query(
