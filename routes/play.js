@@ -1,5 +1,5 @@
 'use strict';
-// routes/play.js — Phase 4b: PIN verification added to /join
+// routes/play.js — Phase 4c: show scores to both pairs, lock once entered
 const router = require('express').Router({ mergeParams: true });
 const jwt    = require('jsonwebtoken');
 const db     = require('../db');
@@ -21,7 +21,6 @@ router.get('/', async (req, res) => {
 });
 
 // ── GET /api/play/:token/pairs ────────────────────────────────
-// Returns pair list WITHOUT PINs (director sees PINs in SetupPairsPage)
 router.get('/pairs', async (req, res) => {
   try {
     const { rows: sess } = await db.query(
@@ -39,7 +38,6 @@ router.get('/pairs', async (req, res) => {
 });
 
 // ── POST /api/play/:token/join ────────────────────────────────
-// Now requires PIN verification
 router.post('/join', async (req, res) => {
   const { pairNumber, pin } = req.body ?? {};
   if (!pairNumber) return res.status(400).json({ error: 'pairNumber required' });
@@ -54,7 +52,6 @@ router.post('/join', async (req, res) => {
     if (session.status === 'archived') return res.status(410).json({ error: 'Session archived' });
     if (session.status === 'setup')    return res.status(400).json({ error: 'Session not started yet — check with your director' });
 
-    // Verify pair + PIN
     const { rows: pairRows } = await db.query(
       `SELECT pair_number, player1_name, player2_name, pin
        FROM session_pairs
@@ -62,8 +59,6 @@ router.post('/join', async (req, res) => {
       [session.id, pairNumber]
     );
     if (!pairRows[0]) return res.status(404).json({ error: 'Pair not found' });
-
-    // PIN check — constant time comparison
     if (String(pairRows[0].pin).trim() !== String(pin).trim()) {
       return res.status(401).json({ error: 'Incorrect PIN. Please check with your director.' });
     }
@@ -106,12 +101,15 @@ router.get('/schedule', requirePlayerAuth, async (req, res) => {
       opponentNames: r.ns_pair === req.player.pairNumber
         ? [r.ew_p1, r.ew_p2].filter(Boolean).join(' / ') || `Pair ${r.ew_pair}`
         : [r.ns_p1, r.ns_p2].filter(Boolean).join(' / ') || `Pair ${r.ns_pair}`,
-      // Only show contract if this pair entered it
+      // Show contract to BOTH pairs once entered by anyone
+      // Before this was hidden from the pair that didn't enter
       declarer: r.entered_at ? r.declarer : null,
       level:    r.entered_at ? r.level    : null,
       suit:     r.entered_at ? r.suit     : null,
       doubled:  r.entered_at ? r.doubled  : null,
       tricks:   r.entered_at ? r.tricks   : null,
+      // canEnter = false once anyone has entered — prevents second pair from editing
+      canEnter: !r.entered_at,
     }));
 
     res.json(enriched);
@@ -133,14 +131,28 @@ router.put('/boards/:resultId', requirePlayerAuth, async (req, res) => {
          AND (br.ns_pair = $3 OR br.ew_pair = $3) AND br.is_bye = FALSE`,
       [req.params.resultId, req.player.sessionId, req.player.pairNumber]
     );
-    if (!rows[0])              return res.status(404).json({ error: 'Board not found or not yours' });
-    if (rows[0].status !== 'active') return res.status(400).json({ error: 'Session is not active' });
-    if (rows[0].results_released)    return res.status(400).json({ error: 'Results already released' });
 
-    const nsScore = calculateRawScore({ declarer, level, suit, doubled, tricks, boardNumber: rows[0].board_number });
+    if (!rows[0])                    return res.status(404).json({ error: 'Board not found or not yours' });
+    if (rows[0].status !== 'active') return res.status(400).json({ error: 'Session is not active' });
+    if (rows[0].results_released)    return res.status(400).json({ error: 'Results already released — no more edits allowed' });
+
+    // Block editing if already entered by anyone
+    if (rows[0].entered_at) {
+      return res.status(400).json({
+        error: 'Score already entered for this board. Only the director can change it.',
+        alreadyEntered: true,
+      });
+    }
+
+    const nsScore = calculateRawScore({
+      declarer, level, suit, doubled, tricks,
+      boardNumber: rows[0].board_number,
+    });
+
     const { rows: updated } = await db.query(
       `UPDATE board_results
-       SET declarer=$1,level=$2,suit=$3,doubled=$4,tricks=$5,ns_score=$6,entered_at=NOW()
+       SET declarer=$1, level=$2, suit=$3, doubled=$4,
+           tricks=$5, ns_score=$6, entered_at=NOW()
        WHERE id=$7 RETURNING *`,
       [declarer, level, suit, doubled, tricks, nsScore, req.params.resultId]
     );
@@ -162,7 +174,7 @@ router.get('/standings', requirePlayerAuth, async (req, res) => {
     const { rows } = await db.query(
       `SELECT results_released FROM sessions WHERE id = $1`, [req.player.sessionId]
     );
-    if (!rows[0]?.results_released) return res.status(403).json({ error: 'Results not yet released' });
+    if (!rows[0]?.results_released) return res.status(403).json({ error: 'Results not yet released by director' });
     const standings = await computeFullStandings(req.player.sessionId);
     res.json(standings);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
@@ -237,7 +249,10 @@ async function computeFullStandings(sessionId) {
   const boardMap = {};
   for (const r of results) {
     if (!boardMap[r.board_number]) boardMap[r.board_number] = [];
-    boardMap[r.board_number].push({ pairNS: r.ns_pair, pairEW: r.ew_pair, nsScore: r.ns_score ?? 0, isBye: r.is_bye });
+    boardMap[r.board_number].push({
+      pairNS: r.ns_pair, pairEW: r.ew_pair,
+      nsScore: r.ns_score ?? 0, isBye: r.is_bye,
+    });
   }
   for (const results of Object.values(boardMap)) {
     const mp = calculateMatchpoints(results);
