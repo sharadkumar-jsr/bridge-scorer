@@ -36,11 +36,15 @@ export default function SetupPairsPage() {
   };
 
   const savePair = async (pair) => {
+    if (pair.is_phantom) return; // never save phantom pair names
     setSaving(s => ({ ...s, [pair.pair_number]: true }));
     try {
       await apiFetch(`/api/sessions/${id}/pairs/${pair.pair_number}`, {
         method: 'PUT',
-        body: JSON.stringify({ player1Name: pair.player1_name, player2Name: pair.player2_name }),
+        body: JSON.stringify({
+          player1Name: pair.player1_name,
+          player2Name: pair.player2_name,
+        }),
       });
       setSaved(s => ({ ...s, [pair.pair_number]: true }));
       setTimeout(() => setSaved(s => ({ ...s, [pair.pair_number]: false })), 2000);
@@ -52,7 +56,8 @@ export default function SetupPairsPage() {
     setStarting(true);
     try {
       await apiFetch(`/api/sessions/${id}/status`, {
-        method: 'PATCH', body: JSON.stringify({ status: 'active' }),
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'active' }),
       });
       nav(`/sessions/${id}/director`);
     } catch (err) { setError(err.message); setStarting(false); }
@@ -64,7 +69,8 @@ export default function SetupPairsPage() {
     </div>
   );
 
-  const realPairs = pairs.filter(p => !p.is_phantom);
+  const realPairs    = pairs.filter(p => !p.is_phantom);
+  const phantomPair  = pairs.find(p => p.is_phantom);
 
   return (
     <div className="min-h-screen bg-felt-gradient">
@@ -72,8 +78,29 @@ export default function SetupPairsPage() {
 
       <main className="max-w-2xl mx-auto px-4 py-8">
 
-        {/* PIN notice */}
-        <div className="card-felt relative p-4 mb-6 border-gold-400/40">
+        {/* ── Phantom pair notice ───────────────────────────────── */}
+        {phantomPair && (
+          <div className="bg-amber-900/20 border border-amber-600/40 rounded-xl px-5 py-4 mb-5">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">👻</span>
+              <div>
+                <p className="text-amber-300 font-semibold text-sm">
+                  Phantom Pair — Pair {phantomPair.pair_number}
+                </p>
+                <p className="text-amber-400/80 text-xs mt-1">
+                  This session has {realPairs.length} real pairs and one phantom pair.
+                  <strong className="text-amber-300"> Pair {phantomPair.pair_number} is the phantom</strong> —
+                  do not assign any real players to it.
+                  The pair scheduled against Pair {phantomPair.pair_number} each round
+                  will receive a bye and an average score automatically.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── PIN notice ────────────────────────────────────────── */}
+        <div className="card-felt relative p-4 mb-5 border-gold-400/40">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-gold-300 font-semibold text-sm flex items-center gap-2">
               🔐 Pair PINs — Tell each pair their PIN before the game starts
@@ -86,8 +113,8 @@ export default function SetupPairsPage() {
             </button>
           </div>
           <p className="text-cream-400 text-xs mb-3">
-            Players need their PIN to log in via the invite link. You can read it out,
-            write it on their score card, or send a private WhatsApp message to each pair.
+            Players need their PIN to log in via the invite link. Tell each pair their PIN
+            verbally, write it on their scorecard, or send a private WhatsApp message.
           </p>
           {showPins && (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -104,10 +131,13 @@ export default function SetupPairsPage() {
           )}
         </div>
 
+        {/* ── Section header ────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-display text-2xl text-cream-100">Enter Pair Names</h2>
-            <p className="text-cream-400 text-sm mt-0.5">Optional — names appear in the standings</p>
+            <p className="text-cream-400 text-sm mt-0.5">
+              Enter names for Pairs 1 to {realPairs.length} only
+            </p>
           </div>
         </div>
 
@@ -117,13 +147,15 @@ export default function SetupPairsPage() {
           </div>
         )}
 
-        <div className="space-y-3 mb-6">
+        {/* ── Real pairs ────────────────────────────────────────── */}
+        <div className="space-y-3 mb-4">
           {realPairs.map(pair => (
             <div key={pair.pair_number} className="card-felt relative p-4 flex items-center gap-3">
               {/* Pair number + PIN */}
               <div className="flex-shrink-0 text-center w-14">
                 <div className="w-10 h-10 rounded-full bg-gold-400/10 border border-gold-400/30
-                                flex items-center justify-center font-display text-gold-300 text-sm mx-auto mb-0.5">
+                                flex items-center justify-center font-display text-gold-300 text-sm
+                                mx-auto mb-0.5">
                   {pair.pair_number}
                 </div>
                 {pair.pin && (
@@ -133,14 +165,20 @@ export default function SetupPairsPage() {
 
               {/* Name inputs */}
               <div className="flex-1 grid grid-cols-2 gap-2">
-                <input className="input-felt text-sm" placeholder="Player 1"
+                <input
+                  className="input-felt text-sm"
+                  placeholder="Player 1"
                   value={pair.player1_name ?? ''}
                   onChange={e => updatePair(pair.pair_number, 'player1_name', e.target.value)}
-                  onBlur={() => savePair(pair)} />
-                <input className="input-felt text-sm" placeholder="Player 2"
+                  onBlur={() => savePair(pair)}
+                />
+                <input
+                  className="input-felt text-sm"
+                  placeholder="Player 2"
                   value={pair.player2_name ?? ''}
                   onChange={e => updatePair(pair.pair_number, 'player2_name', e.target.value)}
-                  onBlur={() => savePair(pair)} />
+                  onBlur={() => savePair(pair)}
+                />
               </div>
 
               {/* Save indicator */}
@@ -152,9 +190,54 @@ export default function SetupPairsPage() {
           ))}
         </div>
 
-        <button onClick={startSession} disabled={starting} className="btn-gold w-full text-base py-3">
+        {/* ── Phantom pair — greyed out, disabled ───────────────── */}
+        {phantomPair && (
+          <div className="mb-6">
+            <div className="card-felt relative p-4 flex items-center gap-3 opacity-50">
+              {/* Ghost icon */}
+              <div className="flex-shrink-0 text-center w-14">
+                <div className="w-10 h-10 rounded-full bg-amber-900/30 border border-amber-600/30
+                                flex items-center justify-center text-xl mx-auto mb-0.5">
+                  👻
+                </div>
+                <div className="font-mono text-xs text-amber-600 tracking-wider">
+                  {phantomPair.pair_number}
+                </div>
+              </div>
+
+              {/* Disabled inputs */}
+              <div className="flex-1 grid grid-cols-2 gap-2">
+                <div className="input-felt text-sm bg-amber-900/10 border-amber-600/20
+                                text-amber-500/60 cursor-not-allowed select-none flex items-center px-4">
+                  Phantom Pair
+                </div>
+                <div className="input-felt text-sm bg-amber-900/10 border-amber-600/20
+                                text-amber-500/60 cursor-not-allowed select-none flex items-center px-4">
+                  No Players
+                </div>
+              </div>
+
+              {/* Lock icon */}
+              <div className="w-5 flex-shrink-0 text-amber-600/50 text-xs text-center">🔒</div>
+            </div>
+            <p className="text-amber-500/60 text-xs text-center mt-1">
+              Pair {phantomPair.pair_number} is the phantom — leave blank, do not assign players
+            </p>
+          </div>
+        )}
+
+        {/* ── Start button ──────────────────────────────────────── */}
+        <button
+          onClick={startSession}
+          disabled={starting}
+          className="btn-gold w-full text-base py-3"
+        >
           {starting ? 'Starting…' : 'Start Session →'}
         </button>
+
+        <p className="text-center text-cream-400/40 text-xs mt-3">
+          You can start without entering all names — they are optional
+        </p>
       </main>
     </div>
   );
