@@ -36,7 +36,7 @@ export default function PlayerDashboard() {
       const schedData = await schedRes.json();
       const sessData  = await sessRes.json();
       if (!schedRes.ok) throw new Error(schedData.error);
-      setBoards(schedData);
+      setBoards(Array.isArray(schedData) ? schedData : []);
       setReleased(sessData.results_released ?? false);
     } catch (e) {
       setError(e.message);
@@ -45,21 +45,8 @@ export default function PlayerDashboard() {
     }
   };
 
-  // Also load BYE rounds separately so we can show them greyed out
-  // BYE boards are filtered out by the server (is_bye=FALSE) so we
-  // detect BYE rounds by checking which rounds have NO boards returned
-  // We get the full round count from the session
-  const [session, setSession] = useState(null);
-  useEffect(() => {
-    if (!player) return;
-    fetch(`/api/play/${token}`)
-      .then(r => r.json())
-      .then(setSession)
-      .catch(console.error);
-  }, [player]);
-
-  // Group boards by round
-  const rounds = useMemo(() => {
+  // Group ALL boards (including BYE) by round
+  const roundMap = useMemo(() => {
     const map = {};
     for (const b of boards) {
       if (!map[b.round]) map[b.round] = [];
@@ -68,26 +55,23 @@ export default function PlayerDashboard() {
     return map;
   }, [boards]);
 
-  // All round numbers including BYE rounds (rounds with no boards for this pair)
-  const allRoundNums = useMemo(() => {
-    if (!session?.num_rounds) return Object.keys(rounds).map(Number).sort((a,b)=>a-b);
-    return Array.from({ length: session.num_rounds }, (_, i) => i + 1);
-  }, [session, rounds]);
+  const roundNums = Object.keys(roundMap).map(Number).sort((a, b) => a - b);
 
+  // Open first round with un-entered real boards
   const [openRound, setOpenRound] = useState(null);
-
   useEffect(() => {
-    if (allRoundNums.length && openRound === null) {
-      // Open first round that has boards to enter
-      const first = allRoundNums.find(r =>
-        rounds[r] && rounds[r].some(b => !b.entered_at && b.canEnter)
-      ) ?? allRoundNums[0];
+    if (roundNums.length && openRound === null) {
+      const first = roundNums.find(r =>
+        roundMap[r].some(b => !b.is_bye && b.canEnter)
+      ) ?? roundNums[0];
       setOpenRound(first);
     }
-  }, [allRoundNums.length]);
+  }, [roundNums.length]);
 
-  const enteredBoards = boards.filter(b => b.entered_at).length;
-  const totalBoards   = boards.length;
+  // Progress — only count real (non-bye) boards
+  const realBoards    = boards.filter(b => !b.is_bye);
+  const enteredBoards = realBoards.filter(b => b.entered_at).length;
+  const totalBoards   = realBoards.length;
   const pct           = totalBoards ? Math.round((enteredBoards / totalBoards) * 100) : 0;
 
   const handleSave = async (contract) => {
@@ -101,7 +85,9 @@ export default function PlayerDashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Save failed');
       setBoards(prev => prev.map(b =>
-        b.id === active.id ? { ...b, ...contract, entered_at: new Date().toISOString(), canEnter: false } : b
+        b.id === active.id
+          ? { ...b, ...contract, entered_at: new Date().toISOString(), canEnter: false }
+          : b
       ));
       setActive(null);
     } catch (e) {
@@ -147,7 +133,7 @@ export default function PlayerDashboard() {
 
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
-        {/* Progress */}
+        {/* Progress — only real boards count */}
         <div className="card-felt relative p-4">
           <div className="flex justify-between text-sm mb-2">
             <span className="text-cream-400">Your boards</span>
@@ -177,39 +163,45 @@ export default function PlayerDashboard() {
         )}
 
         {/* Rounds */}
-        {allRoundNums.map(rnd => {
-          const rndBoards = rounds[rnd] ?? [];
-          const isBye     = rndBoards.length === 0;  // No boards this round = BYE round
-          const rndDone   = !isBye && rndBoards.every(b => b.entered_at);
-          const isOpen    = openRound === rnd;
-          const first     = rndBoards[0];
+        {roundNums.map(rnd => {
+          const rndBoards  = roundMap[rnd] ?? [];
 
-          // ── BYE Round — greyed out, no entry ──────────────────
-          if (isBye) {
+          // Check if this round is a BYE round — all boards in this round are bye
+          const allBye = rndBoards.length > 0 && rndBoards.every(b => b.is_bye);
+
+          // Real boards only for this round
+          const realRndBoards = rndBoards.filter(b => !b.is_bye);
+          const rndDone       = realRndBoards.length > 0 && realRndBoards.every(b => b.entered_at);
+          const isOpen        = openRound === rnd;
+          const first         = realRndBoards[0] ?? rndBoards[0];
+
+          // ── BYE Round ──────────────────────────────────────────
+          if (allBye) {
             return (
-              <div key={rnd} className="card-felt relative overflow-hidden opacity-60">
-                <div className="px-5 py-4 flex items-center justify-between">
+              <div key={rnd} className="card-felt relative overflow-hidden">
+                <div className="px-5 py-4 flex items-center justify-between opacity-60">
                   <div className="flex items-center gap-3">
                     <span className="font-display text-lg text-cream-400">Round {rnd}</span>
                     <span className="text-xs bg-amber-900/40 text-amber-400 border border-amber-700/30
                                      px-2 py-0.5 rounded-full">
-                      BYE — Average Score
+                      👻 BYE Round
                     </span>
                   </div>
-                  <span className="text-xs text-cream-400/60">No play required</span>
+                  <span className="text-xs text-cream-400/60">Average score awarded</span>
                 </div>
-                <div className="px-5 pb-4">
+                <div className="px-5 pb-4 opacity-60">
                   <p className="text-xs text-cream-400/60">
-                    Your pair has a bye this round. An average score will be awarded automatically.
+                    Your pair has a bye this round — no boards to play.
+                    An average score is awarded automatically by the system.
                   </p>
                 </div>
               </div>
             );
           }
 
+          // ── Normal Round ───────────────────────────────────────
           return (
             <div key={rnd} className="card-felt relative overflow-hidden">
-              {/* Round header */}
               <button
                 onClick={() => setOpenRound(isOpen ? null : rnd)}
                 className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/5 transition-colors"
@@ -219,7 +211,7 @@ export default function PlayerDashboard() {
                   {rndDone
                     ? <CheckCircle2 size={15} className="text-green-400" />
                     : <span className="text-xs text-cream-400/60">
-                        {rndBoards.filter(b=>b.entered_at).length}/{rndBoards.length}
+                        {realRndBoards.filter(b => b.entered_at).length}/{realRndBoards.length}
                       </span>
                   }
                 </div>
@@ -238,18 +230,15 @@ export default function PlayerDashboard() {
 
               {isOpen && (
                 <div className="border-t border-gold-500/20 divide-y divide-gold-500/10">
-                  {rndBoards.map(board => {
-                    const isActive   = active?.id === board.id;
-                    const isEntered  = !!board.entered_at;
-                    const canEnter   = board.canEnter;   // false if other pair already entered
+                  {realRndBoards.map(board => {
+                    const isActive  = active?.id === board.id;
+                    const isEntered = !!board.entered_at;
+                    const canEnter  = board.canEnter;
 
                     return (
                       <div key={board.id}>
                         <button
-                          onClick={() => {
-                            // Can only open if not yet entered by anyone
-                            if (canEnter) setActive(isActive ? null : board);
-                          }}
+                          onClick={() => { if (canEnter) setActive(isActive ? null : board); }}
                           className={`w-full px-5 py-3 flex items-center justify-between
                                      transition-colors text-left
                                      ${isActive ? 'bg-gold-400/5' : ''}
@@ -271,17 +260,12 @@ export default function PlayerDashboard() {
 
                           <div className="text-right">
                             {isEntered ? (
-                              <div>
-                                <span className="text-xs font-mono text-green-400">
-                                  {board.level === 0
-                                    ? 'Passed Out'
-                                    : `${board.declarer}${board.level}${board.suit}${board.doubled !== 'none' ? (board.doubled === 'doubled' ? 'X' : 'XX') : ''} = ${board.tricks}`
-                                  }
-                                </span>
-                                {!canEnter && !isEntered && (
-                                  <div className="text-xs text-amber-400/70 mt-0.5">entered by opponents</div>
-                                )}
-                              </div>
+                              <span className="text-xs font-mono text-green-400">
+                                {board.level === 0
+                                  ? 'Passed Out'
+                                  : `${board.declarer}${board.level}${board.suit}${board.doubled !== 'none' ? (board.doubled === 'doubled' ? 'X' : 'XX') : ''} = ${board.tricks}`
+                                }
+                              </span>
                             ) : canEnter ? (
                               <span className="text-xs text-cream-400/50">tap to enter</span>
                             ) : (
@@ -290,7 +274,7 @@ export default function PlayerDashboard() {
                           </div>
                         </button>
 
-                        {/* Contract picker — only shown if canEnter */}
+                        {/* Contract picker */}
                         {isActive && canEnter && (
                           <div className="px-5 py-5 bg-felt-900/60 border-t border-gold-500/20">
                             <ContractPicker
@@ -304,7 +288,7 @@ export default function PlayerDashboard() {
                           </div>
                         )}
 
-                        {/* If already entered by opponents — show what was entered */}
+                        {/* Score entered by opponents */}
                         {!canEnter && isEntered && (
                           <div className="px-5 py-3 bg-felt-900/40 border-t border-gold-500/10">
                             <p className="text-xs text-amber-400/80 flex items-center gap-1.5">
@@ -312,7 +296,7 @@ export default function PlayerDashboard() {
                               <span className="font-mono text-cream-300">
                                 {board.level === 0
                                   ? 'Passed Out'
-                                  : `${board.declarer}${board.level}${board.suit}${board.doubled !== 'none' ? (board.doubled === 'doubled' ? 'X':'XX') : ''} = ${board.tricks}`
+                                  : `${board.declarer}${board.level}${board.suit}${board.doubled !== 'none' ? (board.doubled === 'doubled' ? 'X' : 'XX') : ''} = ${board.tricks}`
                                 }
                               </span>
                             </p>
