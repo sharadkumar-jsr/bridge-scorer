@@ -26,6 +26,6 @@ setInterval(async () => {
   } catch (err) {
     console.error('[keepalive] Database ping failed:', err.message);
   }
-}, 3 * 60 * 1000);  // every 3 minutes
+}, 60 * 1000);  // every 1 minute
 
 module.exports = pool;
