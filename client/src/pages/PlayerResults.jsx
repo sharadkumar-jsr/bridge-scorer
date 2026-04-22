@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, Download, ArrowLeft, Trophy } from 'lucide-react';
+import { Loader2, Download, ArrowLeft } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext.jsx';
 
 const MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
+const RENDER_URL = 'https://bridge-scorer-server.onrender.com';
 
 export default function PlayerResults() {
   const { token }               = useParams();
@@ -45,32 +46,41 @@ export default function PlayerResults() {
     }
   };
 
-  // ── PDF download — pass token as query parameter ──────────────
-  // We cannot use Authorization header because Vercel proxy strips it.
-  // Instead we pass the token as ?t= query param which the server reads.
+  // ── PDF download — go DIRECTLY to Render, bypass Vercel proxy ──
   const downloadPDF = async () => {
     setPdfLoading(true);
     setPdfError('');
     try {
-      const url = `/api/sessions/${player.sessionId}/pdf?t=${encodeURIComponent(player.token)}`;
+      // Build direct URL to Render with token as query param
+      const url = `${RENDER_URL}/api/sessions/${player.sessionId}/pdf?t=${encodeURIComponent(player.token)}`;
 
-      const res = await fetch(url, { method: 'GET' });
+      console.log('[PDF] Fetching:', url.substring(0, 80) + '...');
+
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+      });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? 'Failed to download PDF');
+        const text = await res.text();
+        console.log('[PDF] Error response:', text);
+        let msg = 'Failed to download PDF';
+        try { msg = JSON.parse(text).error ?? msg; } catch (_) {}
+        throw new Error(msg);
       }
 
-      const blob = await res.blob();
+      const blob    = await res.blob();
       const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `bridge-results-${session?.date ?? 'results'}.pdf`;
+      const a       = document.createElement('a');
+      a.href        = blobUrl;
+      a.download    = `bridge-results-${session?.date ?? 'results'}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
+
     } catch (e) {
+      console.error('[PDF] Error:', e);
       setPdfError(e.message);
     } finally {
       setPdfLoading(false);
@@ -125,7 +135,7 @@ export default function PlayerResults() {
         )}
 
         {myStanding && (
-          <div className="card-felt relative p-5 border-gold-400/50">
+          <div className="card-felt relative p-5">
             <div className="text-xs text-cream-400 uppercase tracking-widest mb-1">Your Result</div>
             <div className="flex items-center justify-between">
               <div>
@@ -134,7 +144,7 @@ export default function PlayerResults() {
                   {myStanding.rank > 3 ? ` Rank ${myStanding.rank}` : ''}
                 </div>
                 <div className="text-cream-400 text-sm mt-0.5">
-                  Pair {myStanding.pairNumber} · {myStanding.totalMP} / {myStanding.maxMP} MP
+                  Pair {myStanding.pairNumber} · {myStanding.totalMP}/{myStanding.maxMP} MP
                 </div>
               </div>
               <div className={`font-display text-3xl font-bold ${pctColour(myStanding.percentage)}`}>
@@ -145,7 +155,7 @@ export default function PlayerResults() {
         )}
 
         <div className="flex gap-2">
-          {['standings', 'myboards'].map(t => (
+          {['standings','myboards'].map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all
                 ${tab === t
@@ -202,7 +212,7 @@ export default function PlayerResults() {
             <div className="divide-y divide-gold-500/10">
               {myResults.filter(r => !r.is_bye).map((r, i) => {
                 const contract = r.level != null
-                  ? `${r.declarer}${r.level}${r.suit}${r.doubled === 'doubled' ? 'X' : r.doubled === 'redoubled' ? 'XX' : ''}=${r.tricks}`
+                  ? `${r.declarer}${r.level}${r.suit}${r.doubled==='doubled'?'X':r.doubled==='redoubled'?'XX':''}=${r.tricks}`
                   : '—';
                 const score = r.ns_score != null
                   ? (r.side === 'NS' ? r.ns_score : -r.ns_score)
@@ -210,22 +220,20 @@ export default function PlayerResults() {
                 return (
                   <div key={r.board_number}
                     className={`grid grid-cols-[40px_50px_1fr_50px_50px] px-4 py-3 items-center
-                      ${i % 2 === 0 ? 'bg-felt-800/20' : ''}`}>
+                      ${i%2===0?'bg-felt-800/20':''}`}>
                     <div className="font-mono text-cream-300 text-sm">{r.board_number}</div>
-                    <div className={`text-xs font-semibold
-                      ${r.side === 'NS' ? 'text-cream-300' : 'text-gold-400'}`}>
+                    <div className={`text-xs font-semibold ${r.side==='NS'?'text-cream-300':'text-gold-400'}`}>
                       {r.side}
                     </div>
                     <div className="font-mono text-sm text-cream-200">{contract}</div>
                     <div className={`text-right font-mono text-sm
-                      ${score > 0 ? 'text-green-400' : score < 0 ? 'text-red-400' : 'text-cream-400'}`}>
-                      {score != null ? (score > 0 ? `+${score}` : score) : '—'}
+                      ${score>0?'text-green-400':score<0?'text-red-400':'text-cream-400'}`}>
+                      {score!=null?(score>0?`+${score}`:score):'—'}
                     </div>
                     <div className={`text-right font-mono text-sm
-                      ${r.mp != null && r.mp >= r.maxMp * 0.6 ? 'text-green-400'
-                        : r.mp != null && r.mp < r.maxMp * 0.4 ? 'text-red-400'
-                        : 'text-cream-300'}`}>
-                      {r.mp != null ? `${r.mp}/${r.maxMp}` : '—'}
+                      ${r.mp!=null&&r.mp>=r.maxMp*0.6?'text-green-400'
+                        :r.mp!=null&&r.mp<r.maxMp*0.4?'text-red-400':'text-cream-300'}`}>
+                      {r.mp!=null?`${r.mp}/${r.maxMp}`:'—'}
                     </div>
                   </div>
                 );
@@ -237,9 +245,8 @@ export default function PlayerResults() {
         <button onClick={downloadPDF} disabled={pdfLoading}
           className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
           {pdfLoading
-            ? <><Loader2 size={16} className="animate-spin" /> Downloading…</>
-            : <><Download size={16} /> Download Full Results as PDF</>
-          }
+            ? <><Loader2 size={16} className="animate-spin"/> Downloading…</>
+            : <><Download size={16}/> Download Full Results as PDF</>}
         </button>
 
       </main>
