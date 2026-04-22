@@ -3,25 +3,29 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: false } : false,
   max: 10,
-  idleTimeoutMillis:    30_000,
+  idleTimeoutMillis:       30_000,
   connectionTimeoutMillis: 10_000,
-  // Keepalive settings — prevent connection dropping on Supabase free tier
   keepAlive: true,
   keepAliveInitialDelayMillis: 10_000,
 });
 
-// Reconnect automatically if connection is lost
-pool.on('error', (err, client) => {
+pool.on('error', (err) => {
   console.error('Unexpected pg pool error', err);
 });
 
-// Test connection on startup
-pool.query('SELECT 1').then(() => {
-  console.log('Database connected successfully');
-}).catch(err => {
-  console.error('Database connection failed on startup:', err);
-});
+// ── Self-ping every 3 minutes ─────────────────────────────────
+// Keeps the Supabase connection alive on the free tier
+// so it never times out during a bridge session
+setInterval(async () => {
+  try {
+    await pool.query('SELECT 1');
+    console.log('[keepalive] Database ping ok');
+  } catch (err) {
+    console.error('[keepalive] Database ping failed:', err.message);
+  }
+}, 3 * 60 * 1000);  // every 3 minutes
 
 module.exports = pool;
