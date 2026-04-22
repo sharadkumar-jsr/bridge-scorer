@@ -6,16 +6,18 @@ import { usePlayer } from '../context/PlayerContext.jsx';
 const MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
 export default function PlayerResults() {
-  const { token }              = useParams();
+  const { token }               = useParams();
   const { player, playerFetch } = usePlayer();
-  const nav                    = useNavigate();
+  const nav                     = useNavigate();
 
   const [standings,  setStandings]  = useState([]);
   const [myResults,  setMyResults]  = useState([]);
   const [session,    setSession]    = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
-  const [tab,        setTab]        = useState('standings'); // 'standings' | 'myboards'
+  const [tab,        setTab]        = useState('standings');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError,   setPdfError]   = useState('');
 
   useEffect(() => {
     if (!player) { nav(`/play/${token}`, { replace: true }); return; }
@@ -43,13 +45,38 @@ export default function PlayerResults() {
     }
   };
 
-  const downloadPDF = () => {
-    const url = `/api/sessions/${player.sessionId}/pdf`;
-    const a   = document.createElement('a');
-    a.href    = url;
-    a.setAttribute('Authorization', `Bearer ${player.token}`);
-    // Open in new tab — browser will download it
-    window.open(url + `?token=${player.token}`, '_blank');
+  // ── PDF download — use fetch with Authorization header ────────
+  const downloadPDF = async () => {
+    setPdfLoading(true);
+    setPdfError('');
+    try {
+      const res = await fetch(`/api/sessions/${player.sessionId}/pdf`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${player.token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Failed to download PDF');
+      }
+
+      // Convert response to blob and trigger download
+      const blob = await res.blob();
+      const url  = window.URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `bridge-results-${session?.date ?? 'results'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setPdfError(e.message);
+    } finally {
+      setPdfLoading(false);
+    }
   };
 
   function pairName(row) {
@@ -77,7 +104,8 @@ export default function PlayerResults() {
       {/* Header */}
       <header className="border-b border-gold-500/20 bg-felt-900/80 sticky top-0 z-40">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => nav(`/play/${token}/score`)} className="text-cream-400 hover:text-gold-300">
+          <button onClick={() => nav(`/play/${token}/score`)}
+            className="text-cream-400 hover:text-gold-300">
             <ArrowLeft size={20} />
           </button>
           <span className="font-display text-gold-300 text-base flex-1 truncate">
@@ -85,14 +113,26 @@ export default function PlayerResults() {
           </span>
           <button
             onClick={downloadPDF}
+            disabled={pdfLoading}
             className="flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3"
           >
-            <Download size={14} /> PDF
+            {pdfLoading
+              ? <Loader2 size={14} className="animate-spin" />
+              : <Download size={14} />
+            }
+            {pdfLoading ? 'Downloading…' : 'PDF'}
           </button>
         </div>
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
+
+        {/* PDF error */}
+        {pdfError && (
+          <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-2.5 rounded-lg">
+            {pdfError}
+          </div>
+        )}
 
         {/* My result highlight */}
         {myStanding && (
@@ -101,7 +141,8 @@ export default function PlayerResults() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-display text-2xl text-cream-100">
-                  {MEDAL[myStanding.rank] ?? `#${myStanding.rank}`} {myStanding.rank <= 3 ? '' : `Rank ${myStanding.rank}`}
+                  {MEDAL[myStanding.rank] ?? `#${myStanding.rank}`}
+                  {myStanding.rank > 3 ? ` Rank ${myStanding.rank}` : ''}
                 </div>
                 <div className="text-cream-400 text-sm mt-0.5">
                   Pair {myStanding.pairNumber} · {myStanding.totalMP} / {myStanding.maxMP} MP
@@ -117,14 +158,11 @@ export default function PlayerResults() {
         {/* Tabs */}
         <div className="flex gap-2">
           {['standings', 'myboards'].map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
+            <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all
                 ${tab === t
                   ? 'bg-gold-400 border-gold-400 text-felt-950'
-                  : 'border-gold-500/30 text-cream-300 hover:border-gold-400/50'}`}
-            >
+                  : 'border-gold-500/30 text-cream-300 hover:border-gold-400/50'}`}>
               {t === 'standings' ? '🏆 All Standings' : '📋 My Boards'}
             </button>
           ))}
@@ -142,18 +180,17 @@ export default function PlayerResults() {
             </div>
             <div className="divide-y divide-gold-500/10">
               {standings.map((row, i) => (
-                <div
-                  key={row.pairNumber}
+                <div key={row.pairNumber}
                   className={`grid grid-cols-[44px_1fr_56px_60px] px-4 py-3 items-center
                     ${row.pairNumber === player?.pairNumber ? 'bg-gold-400/10' : ''}
-                    ${i === 0 ? 'bg-gold-400/5' : ''}`}
-                >
+                    ${i === 0 ? 'bg-gold-400/5' : ''}`}>
                   <div>{row.rank <= 3
                     ? <span className="text-lg">{MEDAL[row.rank]}</span>
                     : <span className="font-mono text-cream-400 text-sm">{row.rank}</span>}
                   </div>
                   <div>
-                    <div className={`text-sm font-semibold ${row.pairNumber === player?.pairNumber ? 'text-gold-300' : 'text-cream-100'}`}>
+                    <div className={`text-sm font-semibold
+                      ${row.pairNumber === player?.pairNumber ? 'text-gold-300' : 'text-cream-100'}`}>
                       {pairName(row)}
                     </div>
                     <div className="text-xs text-cream-400/60">Pair {row.pairNumber}</div>
@@ -177,7 +214,7 @@ export default function PlayerResults() {
               <div className="text-right">Score</div><div className="text-right">MP</div>
             </div>
             <div className="divide-y divide-gold-500/10">
-              {myResults.map((r, i) => {
+              {myResults.filter(r => !r.is_bye).map((r, i) => {
                 const contract = r.level != null
                   ? `${r.declarer}${r.level}${r.suit}${r.doubled === 'doubled' ? 'X' : r.doubled === 'redoubled' ? 'XX' : ''}=${r.tricks}`
                   : '—';
@@ -187,10 +224,10 @@ export default function PlayerResults() {
                 return (
                   <div key={r.board_number}
                     className={`grid grid-cols-[40px_50px_1fr_50px_50px] px-4 py-3 items-center
-                      ${i % 2 === 0 ? 'bg-felt-800/20' : ''}`}
-                  >
+                      ${i % 2 === 0 ? 'bg-felt-800/20' : ''}`}>
                     <div className="font-mono text-cream-300 text-sm">{r.board_number}</div>
-                    <div className={`text-xs font-semibold ${r.side === 'NS' ? 'text-cream-300' : 'text-gold-400'}`}>
+                    <div className={`text-xs font-semibold
+                      ${r.side === 'NS' ? 'text-cream-300' : 'text-gold-400'}`}>
                       {r.side}
                     </div>
                     <div className="font-mono text-sm text-cream-200">{contract}</div>
@@ -211,9 +248,18 @@ export default function PlayerResults() {
           </div>
         )}
 
-        <button onClick={downloadPDF} className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
-          <Download size={16} /> Download Full Results as PDF
+        {/* Download button at bottom */}
+        <button
+          onClick={downloadPDF}
+          disabled={pdfLoading}
+          className="btn-ghost w-full flex items-center justify-center gap-2 py-3"
+        >
+          {pdfLoading
+            ? <><Loader2 size={16} className="animate-spin" /> Downloading…</>
+            : <><Download size={16} /> Download Full Results as PDF</>
+          }
         </button>
+
       </main>
     </div>
   );
