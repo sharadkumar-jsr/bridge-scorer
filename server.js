@@ -7,12 +7,13 @@ const { Server } = require('socket.io');
 const helmet     = require('helmet');
 const cors       = require('cors');
 
-const authRouter    = require('./routes/auth');
-const sessionsRouter= require('./routes/sessions');
-const pairsRouter   = require('./routes/pairs');
-const resultsRouter = require('./routes/results');
-const playRouter    = require('./routes/play');
-const pdfRouter     = require('./routes/pdf');
+const authRouter      = require('./routes/auth');
+const sessionsRouter  = require('./routes/sessions');
+const pairsRouter     = require('./routes/pairs');
+const resultsRouter   = require('./routes/results');
+const playRouter      = require('./routes/play');
+const pdfRouter       = require('./routes/pdf');
+const travellerRouter = require('./routes/traveller');
 const { registerDirectorSocket } = require('./socket/director');
 
 const app    = express();
@@ -25,16 +26,9 @@ const io = new Server(server, {
 registerDirectorSocket(io);
 app.set('io', io);
 
-// ── CORS — allow all origins so Vercel can call Render directly ──
-app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
-}));
-
-app.use(helmet({
-  crossOriginResourcePolicy: false,  // allow cross-origin PDF downloads
-}));
+app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+               allowedHeaders: ['Content-Type','Authorization'] }));
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json());
 
 // Routes
@@ -44,6 +38,7 @@ app.use('/api/sessions/:sessionId/pairs',    pairsRouter);
 app.use('/api/sessions/:sessionId/results',  resultsRouter);
 app.use('/api/sessions/:id/pdf',             pdfRouter);
 app.use('/api/play/:token',                  playRouter);
+app.use('/api/play/:token/traveller',        travellerRouter);
 
 app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
