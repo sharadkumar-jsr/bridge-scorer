@@ -43,17 +43,23 @@ function calcScore({ declarer, level, suit, doubled, tricks, boardNumber }) {
     if (level === 6) score += vul ? 750  : 500;
     if (level === 7) score += vul ? 1500 : 1000;
   } else {
-    const mult = doubled === 'redoubled' ? 2 : 1;
-    let penalty = 0;
-    for (let i = 1; i <= -result; i++) {
-      if (vul) {
-        penalty += (i === 1 ? 200 : 300) * mult;
-      } else {
-        let base = i === 1 ? 100 : i <= 3 ? 200 : 300;
-        penalty += base * mult;
+    // Undoubled: simple flat rate per trick
+    if (doubled === 'none') {
+      score = -(vul ? 100 : 50) * (-result);
+    } else {
+      // Doubled / Redoubled: sliding scale
+      const mult = doubled === 'redoubled' ? 2 : 1;
+      let penalty = 0;
+      for (let i = 1; i <= -result; i++) {
+        if (vul) {
+          penalty += (i === 1 ? 200 : 300) * mult;
+        } else {
+          const base = i === 1 ? 100 : i <= 3 ? 200 : 300;
+          penalty += base * mult;
+        }
       }
+      score = -penalty;
     }
-    score = -penalty;
   }
   return declaringNS ? score : -score;
 }
