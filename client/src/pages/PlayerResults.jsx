@@ -43,8 +43,6 @@ export default function PlayerResults() {
     }
   };
 
-  const handlePrint = () => window.print();
-
   function pairName(row) {
     const names = [row.player1Name, row.player2Name].filter(Boolean);
     return names.length ? names.join(' / ') : `Pair ${row.pairNumber}`;
@@ -65,30 +63,165 @@ export default function PlayerResults() {
 
   const myStanding = standings.find(s => s.pairNumber === player?.pairNumber);
 
+  // Build inline styles for print table rows to avoid CSS specificity issues
+  const thStyle = {
+    background: '#0b2a1a',
+    color: '#c9a03c',
+    padding: '6px 10px',
+    textAlign: 'left',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    borderBottom: '1px solid #555',
+  };
+  const tdStyle = {
+    background: 'white',
+    color: 'black',
+    padding: '5px 10px',
+    fontSize: '11px',
+    borderBottom: '1px solid #ddd',
+  };
+  const tdAltStyle = {
+    ...tdStyle,
+    background: '#f8f8f2',
+  };
+  const tdMyStyle = {
+    ...tdStyle,
+    background: '#fff8e0',
+    fontWeight: 'bold',
+  };
+
   return (
     <>
       <style>{`
         @media print {
-          .no-print { display: none !important; }
-          .print-only { display: block !important; }
-          body { background: white !important; color: black !important; }
-          .print-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          .print-table th { background: #0b2a1a; color: #c9a03c; padding: 6px 8px; text-align: left; }
-          .print-table td { padding: 5px 8px; border-bottom: 1px solid #ddd; }
-          .print-table tr:nth-child(even) td { background: #f5f5f0; }
-          .my-row td { background: #fff8e6 !important; font-weight: bold; }
-          .print-header { text-align: center; margin-bottom: 20px; }
-          .print-section { margin-bottom: 24px; }
-          .print-section h2 { font-size: 15px; color: #0b2a1a; border-bottom: 2px solid #c9a03c; padding-bottom: 4px; margin-bottom: 8px; }
-          .score-pos { color: #1a7a3a; }
-          .score-neg { color: #cc3333; }
+          /* Nuclear option — override everything with white */
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body, html {
+            background: white !important;
+            color: black !important;
+          }
+          /* Hide all screen UI */
+          .pr-navbar  { display: none !important; }
+          .pr-screen  { display: none !important; }
+          /* Show print content */
+          .pr-print   { display: block !important; }
+          .pr-footer  { display: block !important; }
         }
-        @media screen { .print-only { display: none; } }
+        @media screen {
+          .pr-print  { display: none; }
+          .pr-footer { display: none; }
+        }
       `}</style>
 
-      <div className="min-h-screen bg-felt-gradient">
+      {/* ── PRINT VERSION ───────────────────────────────────────────── */}
+      <div className="pr-print" style={{padding: '20px', fontFamily: 'Arial, sans-serif', background: 'white', color: 'black'}}>
+
+        {/* Header */}
+        <div style={{textAlign:'center', marginBottom:'16px', borderBottom:'3px solid #0b2a1a', paddingBottom:'12px'}}>
+          <h1 style={{fontSize:'20px', color:'#0b2a1a', margin:'0 0 4px'}}>♠ ♥ ♦ ♣ Bridge Club Scorer</h1>
+          <p style={{fontSize:'12px', color:'#555', margin:0}}>
+            {session?.name} · {session?.date} · {session?.tables_count} tables · {session?.num_boards} boards
+          </p>
+        </div>
+
+        {/* Standings */}
+        <div style={{marginBottom:'24px'}}>
+          <h2 style={{fontSize:'15px', color:'#0b2a1a', borderBottom:'2px solid #c9a03c', paddingBottom:'4px', marginBottom:'8px'}}>
+            Final Standings
+          </h2>
+          <table style={{width:'100%', borderCollapse:'collapse', fontSize:'11px'}}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Rank</th>
+                <th style={thStyle}>Pair #</th>
+                <th style={thStyle}>Players</th>
+                <th style={{...thStyle, textAlign:'right'}}>MP</th>
+                <th style={{...thStyle, textAlign:'right'}}>Max MP</th>
+                <th style={{...thStyle, textAlign:'right'}}>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {standings.map((row, i) => {
+                const isMe = row.pairNumber === player?.pairNumber;
+                const td   = isMe ? tdMyStyle : i % 2 === 0 ? tdStyle : tdAltStyle;
+                const pct  = parseFloat(row.percentage);
+                const pctColor = pct >= 60 ? '#1a7a3a' : pct < 45 ? '#cc3333' : '#000';
+                return (
+                  <tr key={row.pairNumber}>
+                    <td style={td}>{row.rank <= 3 ? ['🥇','🥈','🥉'][row.rank-1] : row.rank}</td>
+                    <td style={td}>{row.pairNumber}</td>
+                    <td style={td}>{pairName(row)}{isMe ? ' ◀ You' : ''}</td>
+                    <td style={{...td, textAlign:'right'}}>{row.totalMP}</td>
+                    <td style={{...td, textAlign:'right'}}>{row.maxMP}</td>
+                    <td style={{...td, textAlign:'right', fontWeight:'bold', color:pctColor}}>
+                      {row.percentage}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* My boards */}
+        <div>
+          <h2 style={{fontSize:'15px', color:'#0b2a1a', borderBottom:'2px solid #c9a03c', paddingBottom:'4px', marginBottom:'8px'}}>
+            My Board Results — Pair {player?.pairNumber}
+          </h2>
+          <table style={{width:'100%', borderCollapse:'collapse', fontSize:'11px'}}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Board</th>
+                <th style={thStyle}>Rnd</th>
+                <th style={thStyle}>Side</th>
+                <th style={thStyle}>Contract</th>
+                <th style={{...thStyle, textAlign:'right'}}>Score</th>
+                <th style={{...thStyle, textAlign:'right'}}>MP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {myResults.filter(r => !r.is_bye).map((r, i) => {
+                const contract = r.level != null
+                  ? `${r.declarer}${r.level}${r.suit}${r.doubled==='doubled'?'X':r.doubled==='redoubled'?'XX':''}=${r.tricks}`
+                  : '—';
+                const score = r.ns_score != null
+                  ? (r.side === 'NS' ? r.ns_score : -r.ns_score)
+                  : null;
+                const td = i % 2 === 0 ? tdStyle : tdAltStyle;
+                const scoreColor = score > 0 ? '#1a7a3a' : score < 0 ? '#cc3333' : '#555';
+                return (
+                  <tr key={r.board_number}>
+                    <td style={td}>{r.board_number}</td>
+                    <td style={td}>{r.round}</td>
+                    <td style={td}>{r.side}</td>
+                    <td style={{...td, fontFamily:'monospace'}}>{contract}</td>
+                    <td style={{...td, textAlign:'right', fontWeight:'bold', color:scoreColor}}>
+                      {score != null ? (score > 0 ? `+${score}` : score) : '—'}
+                    </td>
+                    <td style={{...td, textAlign:'right'}}>
+                      {r.mp != null ? `${r.mp}/${r.maxMp}` : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Footer for print */}
+      <div className="pr-footer" style={{textAlign:'center', fontSize:'10px', color:'#888',
+        marginTop:'16px', borderTop:'1px solid #ddd', paddingTop:'8px', fontFamily:'Arial, sans-serif'}}>
+        Generated by Bridge Club Scorer · {new Date().toLocaleDateString()}
+      </div>
+
+      {/* ── SCREEN VERSION ─────────────────────────────────────────── */}
+      <div className="pr-screen min-h-screen bg-felt-gradient">
         {/* Navbar */}
-        <header className="no-print border-b border-gold-500/20 bg-felt-900/80 sticky top-0 z-40">
+        <header className="pr-navbar border-b border-gold-500/20 bg-felt-900/80 sticky top-0 z-40">
           <div className="max-w-lg mx-auto px-4 h-14 flex items-center gap-3">
             <button onClick={() => nav(`/play/${token}/score`)}
               className="text-cream-400 hover:text-gold-300">
@@ -97,88 +230,14 @@ export default function PlayerResults() {
             <span className="font-display text-gold-300 text-base flex-1 truncate">
               {session?.name} — Results
             </span>
-            <button onClick={handlePrint}
+            <button onClick={() => window.print()}
               className="flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3">
               <Printer size={14} /> Print
             </button>
           </div>
         </header>
 
-        {/* Print version */}
-        <div className="print-only" style={{padding:'20px'}}>
-          <div className="print-header">
-            <h1 style={{fontSize:'18px',margin:0}}>♠ ♥ ♦ ♣ Bridge Club Scorer</h1>
-            <p style={{fontSize:'13px',color:'#666',margin:'4px 0 0'}}>
-              {session?.name} · {session?.date} · {session?.tables_count} tables · {session?.num_boards} boards
-            </p>
-          </div>
-          <div className="print-section">
-            <h2>Final Standings</h2>
-            <table className="print-table">
-              <thead>
-                <tr>
-                  <th>Rank</th><th>Pair</th><th>Players</th>
-                  <th style={{textAlign:'right'}}>MP</th>
-                  <th style={{textAlign:'right'}}>Max MP</th>
-                  <th style={{textAlign:'right'}}>%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {standings.map(row => (
-                  <tr key={row.pairNumber}
-                    className={row.pairNumber===player?.pairNumber?'my-row':''}>
-                    <td>{row.rank<=3?['🥇','🥈','🥉'][row.rank-1]:row.rank}</td>
-                    <td>{row.pairNumber}</td>
-                    <td>{pairName(row)}{row.pairNumber===player?.pairNumber?' ◀ You':''}</td>
-                    <td style={{textAlign:'right'}}>{row.totalMP}</td>
-                    <td style={{textAlign:'right'}}>{row.maxMP}</td>
-                    <td style={{textAlign:'right',fontWeight:'bold'}}>{row.percentage}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="print-section">
-            <h2>My Board Results — Pair {player?.pairNumber}</h2>
-            <table className="print-table">
-              <thead>
-                <tr>
-                  <th>Board</th><th>Side</th><th>Contract</th>
-                  <th style={{textAlign:'right'}}>Score</th>
-                  <th style={{textAlign:'right'}}>MP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myResults.filter(r=>!r.is_bye).map(r => {
-                  const contract = r.level!=null
-                    ? `${r.declarer}${r.level}${r.suit}${r.doubled==='doubled'?'X':r.doubled==='redoubled'?'XX':''}=${r.tricks}`
-                    : '—';
-                  const score = r.ns_score!=null?(r.side==='NS'?r.ns_score:-r.ns_score):null;
-                  return (
-                    <tr key={r.board_number}>
-                      <td>{r.board_number}</td>
-                      <td>{r.side}</td>
-                      <td>{contract}</td>
-                      <td style={{textAlign:'right',fontWeight:'bold',
-                        color:score>0?'#1a7a3a':score<0?'#cc3333':'#555'}}>
-                        {score!=null?(score>0?`+${score}`:score):'—'}
-                      </td>
-                      <td style={{textAlign:'right'}}>
-                        {r.mp!=null?`${r.mp}/${r.maxMp}`:'—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p style={{textAlign:'center',fontSize:'11px',color:'#888',marginTop:'20px'}}>
-            Generated by Bridge Club Scorer · {new Date().toLocaleDateString()}
-          </p>
-        </div>
-
-        {/* Screen version */}
-        <main className="no-print max-w-lg mx-auto px-4 py-6 space-y-4">
+        <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
           {myStanding && (
             <div className="card-felt relative p-5">
@@ -200,7 +259,6 @@ export default function PlayerResults() {
             </div>
           )}
 
-          {/* Tabs */}
           <div className="flex gap-2">
             {['standings','myboards'].map(t => (
               <button key={t} onClick={() => setTab(t)}
@@ -208,7 +266,7 @@ export default function PlayerResults() {
                   ${tab===t
                     ?'bg-gold-400 border-gold-400 text-felt-950'
                     :'border-gold-500/30 text-cream-300 hover:border-gold-400/50'}`}>
-                {t==='standings'?'🏆 All Standings':'📋 My Boards'}
+                {t==='standings' ? '🏆 All Standings' : '📋 My Boards'}
               </button>
             ))}
           </div>
@@ -289,21 +347,18 @@ export default function PlayerResults() {
             </div>
           )}
 
-          {/* Board Travellers link */}
-          <button
-            onClick={() => nav(`/play/${token}/traveller`)}
+          <button onClick={() => nav(`/play/${token}/traveller`)}
             className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
-            <ClipboardList size={16} />
-            View Board Travellers (all pairs per board)
+            <ClipboardList size={16} /> View Board Travellers
           </button>
 
-          <button onClick={handlePrint}
+          <button onClick={() => window.print()}
             className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
             <Printer size={16} /> Print Results / Save as PDF
           </button>
 
-          <p className="text-center text-cream-400/50 text-xs">
-            Tap Print → choose "Save as PDF" in your browser print dialog
+          <p className="text-center text-cream-400/50 text-xs pb-4">
+            Tap Print → "Save as PDF" in your browser print dialog
           </p>
         </main>
       </div>
