@@ -45,33 +45,31 @@ export default function PlayerResults() {
     }
   };
 
-  // ── PDF download — use fetch with Authorization header ────────
+  // ── PDF download — pass token as query parameter ──────────────
+  // We cannot use Authorization header because Vercel proxy strips it.
+  // Instead we pass the token as ?t= query param which the server reads.
   const downloadPDF = async () => {
     setPdfLoading(true);
     setPdfError('');
     try {
-      const res = await fetch(`/api/sessions/${player.sessionId}/pdf`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${player.token}`,
-        },
-      });
+      const url = `/api/sessions/${player.sessionId}/pdf?t=${encodeURIComponent(player.token)}`;
+
+      const res = await fetch(url, { method: 'GET' });
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'Failed to download PDF');
       }
 
-      // Convert response to blob and trigger download
       const blob = await res.blob();
-      const url  = window.URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
       a.download = `bridge-results-${session?.date ?? 'results'}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
     } catch (e) {
       setPdfError(e.message);
     } finally {
@@ -101,7 +99,6 @@ export default function PlayerResults() {
 
   return (
     <div className="min-h-screen bg-felt-gradient">
-      {/* Header */}
       <header className="border-b border-gold-500/20 bg-felt-900/80 sticky top-0 z-40">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center gap-3">
           <button onClick={() => nav(`/play/${token}/score`)}
@@ -111,15 +108,9 @@ export default function PlayerResults() {
           <span className="font-display text-gold-300 text-base flex-1 truncate">
             {session?.name} — Results
           </span>
-          <button
-            onClick={downloadPDF}
-            disabled={pdfLoading}
-            className="flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3"
-          >
-            {pdfLoading
-              ? <Loader2 size={14} className="animate-spin" />
-              : <Download size={14} />
-            }
+          <button onClick={downloadPDF} disabled={pdfLoading}
+            className="flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3">
+            {pdfLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             {pdfLoading ? 'Downloading…' : 'PDF'}
           </button>
         </div>
@@ -127,14 +118,12 @@ export default function PlayerResults() {
 
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
-        {/* PDF error */}
         {pdfError && (
           <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-2.5 rounded-lg">
             {pdfError}
           </div>
         )}
 
-        {/* My result highlight */}
         {myStanding && (
           <div className="card-felt relative p-5 border-gold-400/50">
             <div className="text-xs text-cream-400 uppercase tracking-widest mb-1">Your Result</div>
@@ -155,7 +144,6 @@ export default function PlayerResults() {
           </div>
         )}
 
-        {/* Tabs */}
         <div className="flex gap-2">
           {['standings', 'myboards'].map(t => (
             <button key={t} onClick={() => setTab(t)}
@@ -170,7 +158,6 @@ export default function PlayerResults() {
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
 
-        {/* Standings tab */}
         {tab === 'standings' && (
           <div className="card-felt relative overflow-hidden">
             <div className="grid grid-cols-[44px_1fr_56px_60px] px-4 py-3
@@ -205,7 +192,6 @@ export default function PlayerResults() {
           </div>
         )}
 
-        {/* My boards tab */}
         {tab === 'myboards' && (
           <div className="card-felt relative overflow-hidden">
             <div className="grid grid-cols-[40px_50px_1fr_50px_50px] px-4 py-3
@@ -248,12 +234,8 @@ export default function PlayerResults() {
           </div>
         )}
 
-        {/* Download button at bottom */}
-        <button
-          onClick={downloadPDF}
-          disabled={pdfLoading}
-          className="btn-ghost w-full flex items-center justify-center gap-2 py-3"
-        >
+        <button onClick={downloadPDF} disabled={pdfLoading}
+          className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
           {pdfLoading
             ? <><Loader2 size={16} className="animate-spin" /> Downloading…</>
             : <><Download size={16} /> Download Full Results as PDF</>
