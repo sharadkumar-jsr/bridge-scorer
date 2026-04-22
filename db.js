@@ -14,6 +14,8 @@ const pool = new Pool({
 
 pool.on('error', (err) => {
   console.error('Unexpected pg pool error', err);
+  // Automatically attempt reconnection
+  pool.connect().catch(e => console.error('Reconnection failed:', e.message));
 });
 
 // ── Self-ping every 3 minutes ─────────────────────────────────
