@@ -1,5 +1,6 @@
 'use strict';
-// routes/pdf.js — with debug logging
+// routes/pdf.js — accepts token from ?t= query param OR Authorization header
+// Vercel proxy strips Authorization headers so we use query param for player downloads
 const router  = require('express').Router({ mergeParams: true });
 const jwt     = require('jsonwebtoken');
 const db      = require('../db');
@@ -17,41 +18,38 @@ const FONTS = {
 const printer = new PdfPrinter(FONTS);
 
 async function flexAuth(req, res, next) {
-  // Log all headers for debugging
-  console.log('[PDF] Request headers:', JSON.stringify(req.headers));
-  console.log('[PDF] Session ID from params:', req.params.id);
+  // Accept token from query param ?t= OR Authorization header
+  let token = req.query.t ?? null;
 
-  const header = req.headers.authorization ?? '';
-  console.log('[PDF] Authorization header:', header ? header.substring(0, 30) + '...' : 'MISSING');
+  if (!token) {
+    const header = req.headers.authorization ?? '';
+    if (header.startsWith('Bearer ')) {
+      token = header.slice(7);
+    }
+  }
 
-  if (!header.startsWith('Bearer ')) {
-    console.log('[PDF] ERROR: Missing or malformed Authorization header');
+  if (!token) {
+    console.log('[PDF] No token found in query or header');
     return res.status(401).json({ error: 'Missing or malformed Authorization header' });
   }
 
-  const token = header.slice(7);
+  console.log('[PDF] Token found, verifying...');
 
   try {
     const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-    console.log('[PDF] Token payload role:', payload.role);
-    console.log('[PDF] Token payload sessionId:', payload.sessionId ?? 'N/A (director)');
+    console.log('[PDF] Token role:', payload.role);
 
     if (payload.role === 'player') {
-      console.log('[PDF] Player token — checking if results released');
       const { rows } = await db.query(
         `SELECT results_released FROM sessions WHERE id = $1`,
         [req.params.id]
       );
-      if (!rows[0]) {
-        console.log('[PDF] Session not found:', req.params.id);
-        return res.status(404).json({ error: 'Session not found' });
-      }
-      console.log('[PDF] results_released:', rows[0].results_released);
+      if (!rows[0]) return res.status(404).json({ error: 'Session not found' });
       if (!rows[0].results_released) {
         return res.status(403).json({ error: 'Results not yet released by director' });
       }
       if (payload.sessionId !== req.params.id) {
-        console.log('[PDF] Session ID mismatch. Token:', payload.sessionId, 'Params:', req.params.id);
+        console.log('[PDF] Session mismatch. Token:', payload.sessionId, 'Param:', req.params.id);
         return res.status(403).json({ error: 'Session ID mismatch' });
       }
       req.user   = null;
@@ -61,7 +59,6 @@ async function flexAuth(req, res, next) {
       req.user   = { id: payload.sub, role: payload.role };
       req.player = null;
     } else {
-      console.log('[PDF] Unknown role:', payload.role);
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -71,12 +68,14 @@ async function flexAuth(req, res, next) {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired — please log in again' });
     }
-    return res.status(401).json({ error: 'Invalid token: ' + err.message });
+    return res.status(401).json({ error: 'Invalid token' });
   }
 }
 
 router.get('/', flexAuth, async (req, res) => {
   try {
+    console.log('[PDF] Generating PDF for session:', req.params.id);
+
     const { rows: sessionRows } = await db.query(
       `SELECT s.*, u.display_name AS director_name
        FROM sessions s LEFT JOIN users u ON u.id = s.created_by
@@ -101,11 +100,14 @@ router.get('/', flexAuth, async (req, res) => {
        ORDER BY br.board_number, br.round`, [req.params.id]
     );
 
+    console.log('[PDF] Building PDF with', standings.length, 'pairs and', boardRows.length, 'boards');
+
     const docDef = buildPDF(session, standings, boardRows);
     const pdfDoc = printer.createPdfKitDocument(docDef);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="bridge-results-${session.date}.pdf"`);
+
     pdfDoc.pipe(res);
     pdfDoc.end();
 
@@ -136,7 +138,7 @@ function buildPDF(session, standings, boardRows) {
       { canvas: [{ type:'rect', x:0, y:0, w:515, h:70, color:DARK }], margin:[0,0,0,0] },
       { text:'♠ ♥ ♦ ♣  Bridge Club Scorer', fontSize:18, bold:true, color:GOLD, margin:[10,-58,0,0] },
       { text:session.name, fontSize:13, color:LIGHT, margin:[10,4,0,0] },
-      { text:`${session.date}  ·  ${session.tables_count} tables  ·  ${session.num_boards} boards`,
+      { text:`${session.date}  ·  ${session.tables_count} tables  ·  ${session.num_boards} boards  ·  ${session.num_rounds} rounds`,
         fontSize:9, color:'#a0c0a0', margin:[10,2,0,20] },
       { text:'Final Standings', fontSize:14, bold:true, margin:[0,0,0,8] },
       { table: { headerRows:1, widths:[30,30,'*',50,50,50],
