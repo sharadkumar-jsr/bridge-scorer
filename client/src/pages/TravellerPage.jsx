@@ -1,43 +1,34 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft, Printer, ChevronDown, ChevronUp } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext.jsx';
 
-// Vulnerability cycle
 const VUL_CYCLE = [
   'none','ns','ew','both','ns','ew','both','none',
   'ew','both','none','ns','both','none','ns','ew',
 ];
 function getVuln(b) { return VUL_CYCLE[(b - 1) % 16]; }
-
-function vulLabel(boardNum) {
-  const v = getVuln(boardNum);
-  if (v === 'none')  return { text: 'None', cls: 'text-cream-400' };
-  if (v === 'ns')    return { text: 'NS Vul', cls: 'text-red-400' };
-  if (v === 'ew')    return { text: 'EW Vul', cls: 'text-red-400' };
-  if (v === 'both')  return { text: 'Both Vul', cls: 'text-red-400' };
+function vulText(b) {
+  const v = getVuln(b);
+  if (v === 'none') return 'None Vul';
+  if (v === 'ns')   return 'NS Vul';
+  if (v === 'ew')   return 'EW Vul';
+  return 'Both Vul';
 }
 
 function contractStr(r) {
   if (!r || r.level == null) return '—';
-  if (r.level === 0) return 'Passed Out';
+  if (r.level === 0) return 'Passed';
   const dbl = r.doubled === 'doubled' ? 'X' : r.doubled === 'redoubled' ? 'XX' : '';
   return `${r.declarer}${r.level}${r.suit}${dbl}`;
 }
 
-function pairLabel(r, pairNum) {
-  const p = [r[`p${pairNum}_name1`], r[`p${pairNum}_name2`]].filter(Boolean).join('/');
-  return p || `Pair ${r[`pair${pairNum}`]}`;
-}
-
-// Calculate matchpoints for a set of results on one board
 function calcMP(results) {
   const played = results.filter(r => !r.is_bye && r.ns_score != null);
   const n      = played.length;
   const maxMP  = Math.max(0, (n - 1) * 2);
   const avgMP  = maxMP / 2;
-
-  const out = {};
+  const out    = {};
   for (const r of played) {
     let nsMP = 0, ewMP = 0;
     for (const other of played) {
@@ -48,12 +39,9 @@ function calcMP(results) {
     }
     out[`${r.ns_pair}-${r.ew_pair}`] = { nsMP, ewMP, maxMP };
   }
-
-  // Bye pairs get average
   for (const r of results.filter(r => r.is_bye)) {
     out[`${r.ns_pair}-${r.ew_pair}`] = { nsMP: avgMP, ewMP: avgMP, maxMP, isBye: true };
   }
-
   return out;
 }
 
@@ -62,11 +50,11 @@ export default function TravellerPage() {
   const { player, playerFetch } = usePlayer();
   const nav                     = useNavigate();
 
-  const [boards,   setBoards]   = useState([]);   // all board results grouped by board number
-  const [pairs,    setPairs]    = useState({});    // pairNum → names
-  const [session,  setSession]  = useState(null);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
+  const [boards,    setBoards]    = useState([]);
+  const [pairs,     setPairs]     = useState({});
+  const [session,   setSession]   = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState('');
   const [openBoard, setOpenBoard] = useState(null);
 
   useEffect(() => {
@@ -76,29 +64,19 @@ export default function TravellerPage() {
 
   const loadAll = async () => {
     try {
-      // We need all board results — use the myresults endpoint won't work
-      // Instead we fetch standings (which triggers full score calc) and
-      // get the full board data via a dedicated call
-      const [sessRes, pairsRes] = await Promise.all([
+      const [sessRes, travRes] = await Promise.all([
         fetch(`/api/play/${token}`),
         playerFetch(`/api/play/${token}/traveller`),
       ]);
-      const sessData   = await sessRes.json();
-      const travelData = await pairsRes.json();
-
-      if (!pairsRes.ok) throw new Error(travelData.error ?? 'Could not load board data');
-
+      const sessData = await sessRes.json();
+      const travData = await travRes.json();
+      if (!travRes.ok) throw new Error(travData.error ?? 'Could not load board data');
       setSession(sessData);
-
-      // Build pair name lookup
       const pairLookup = {};
-      (travelData.pairs ?? []).forEach(p => { pairLookup[p.pair_number] = p; });
+      (travData.pairs ?? []).forEach(p => { pairLookup[p.pair_number] = p; });
       setPairs(pairLookup);
-      setBoards(travelData.boards ?? []);
-
-      // Open first board by default
-      if (travelData.boards?.length) setOpenBoard(travelData.boards[0].boardNumber);
-
+      setBoards(travData.boards ?? []);
+      if (travData.boards?.length) setOpenBoard(travData.boards[0].boardNumber);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -108,12 +86,19 @@ export default function TravellerPage() {
 
   function getPairName(num) {
     const p = pairs[num];
+    if (!p) return `P${num}`;
+    const names = [p.player1_name, p.player2_name].filter(Boolean);
+    // Shorten for mobile: "Sharma / Patel" → "Sharma/Patel", truncate at 12 chars
+    const full = names.length ? names.join('/') : `Pair ${num}`;
+    return full.length > 14 ? full.substring(0, 13) + '…' : full;
+  }
+
+  function getPairNameFull(num) {
+    const p = pairs[num];
     if (!p) return `Pair ${num}`;
     const names = [p.player1_name, p.player2_name].filter(Boolean);
     return names.length ? names.join(' / ') : `Pair ${num}`;
   }
-
-  const handlePrint = () => window.print();
 
   if (loading) return (
     <div className="min-h-screen bg-felt-gradient flex items-center justify-center">
@@ -123,211 +108,219 @@ export default function TravellerPage() {
 
   return (
     <>
+      {/* ── CRITICAL: Print styles override EVERYTHING ───────────────── */}
       <style>{`
         @media print {
-          .no-print { display: none !important; }
-          .print-show { display: block !important; }
-          body { background: white !important; color: black !important; font-family: sans-serif; }
-          .traveller-board { page-break-inside: avoid; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
-          .traveller-board-header { background: #0b2a1a; color: #c9a03c; padding: 8px 12px; display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; }
-          .traveller-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-          .traveller-table th { background: #f0f0e8; color: #333; padding: 5px 8px; text-align: center; border-bottom: 1px solid #ccc; }
-          .traveller-table td { padding: 4px 8px; text-align: center; border-bottom: 1px solid #eee; }
-          .traveller-table tr:last-child td { border-bottom: none; }
-          .my-row td { background: #fff8e6 !important; font-weight: bold; }
-          .print-title { text-align: center; margin-bottom: 16px; }
-          .score-pos { color: #1a7a3a; }
-          .score-neg { color: #cc3333; }
+          /* Force white background on everything */
+          * {
+            background: white !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          /* Hide the screen navigation */
+          .t-navbar { display: none !important; }
+          /* Show all board results even if collapsed on screen */
+          .t-board-body { display: block !important; }
+          /* Board styling for print */
+          .t-board {
+            border: 1px solid #999 !important;
+            margin-bottom: 12px !important;
+            page-break-inside: avoid !important;
+            border-radius: 4px !important;
+            overflow: hidden !important;
+          }
+          .t-board-header {
+            background: #0b2a1a !important;
+            color: #c9a03c !important;
+            padding: 5px 10px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+            font-size: 11px !important;
+            font-weight: bold !important;
+          }
+          /* Table styling */
+          .t-table { width: 100% !important; border-collapse: collapse !important; font-size: 10px !important; }
+          .t-th { background: #e8e8e0 !important; color: #333 !important; padding: 3px 6px !important; border-bottom: 1px solid #bbb !important; font-weight: bold !important; }
+          .t-td { padding: 3px 6px !important; border-bottom: 1px solid #eee !important; color: black !important; }
+          .t-td-pos { color: #1a7a3a !important; font-weight: bold !important; }
+          .t-td-neg { color: #cc3333 !important; font-weight: bold !important; }
+          .t-my { background: #fff8e0 !important; }
+          /* Print header */
+          .t-print-header { display: block !important; text-align: center; margin-bottom: 14px; border-bottom: 2px solid #0b2a1a; padding-bottom: 10px; }
+          .t-print-header h1 { font-size: 18px; color: #0b2a1a !important; margin: 0 0 3px; }
+          .t-print-header p  { font-size: 11px; color: #555 !important; margin: 0; }
+          /* Hide screen-only elements */
+          .t-screen-btn { display: none !important; }
+          .t-chevron    { display: none !important; }
+          .t-count      { display: none !important; }
+          /* Footer */
+          .t-footer { display: block !important; text-align: center; font-size: 9px; color: #888 !important; margin-top: 12px; border-top: 1px solid #ddd; padding-top: 6px; }
         }
-        @media screen { .print-show { display: none; } }
+        @media screen {
+          .t-print-header { display: none; }
+          .t-footer { display: none; }
+          .t-board-header { background: #071a10; }
+        }
       `}</style>
 
-      <div className="min-h-screen bg-felt-gradient">
-        {/* Navbar */}
-        <header className="no-print border-b border-gold-500/20 bg-felt-900/80 sticky top-0 z-40">
-          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-            <button onClick={() => nav(`/play/${token}/results`)}
-              className="text-cream-400 hover:text-gold-300">
-              <ArrowLeft size={20} />
-            </button>
-            <span className="font-display text-gold-300 text-base flex-1 truncate">
-              Board Travellers — {session?.name}
-            </span>
-            <button onClick={handlePrint}
-              className="flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3">
-              <Printer size={14} /> Print
-            </button>
-          </div>
-        </header>
+      {/* ── Print header (hidden on screen) ──────────────────────────── */}
+      <div className="t-print-header">
+        <h1>♠ ♥ ♦ ♣ Bridge Club Scorer — Board Travellers</h1>
+        <p>{session?.name} · {session?.date} · {session?.tables_count} tables · {session?.num_boards} boards</p>
+      </div>
 
-        {/* Print header */}
-        <div className="print-show print-title" style={{padding:'16px'}}>
-          <h1 style={{fontSize:'18px', margin:0}}>♠ ♥ ♦ ♣ Bridge Club Scorer — Board Travellers</h1>
-          <p style={{fontSize:'13px', color:'#666', margin:'4px 0 0'}}>
-            {session?.name} · {session?.date}
-          </p>
+      {/* ── Screen navbar ─────────────────────────────────────────────── */}
+      <header className="t-navbar border-b border-gold-500/20 bg-felt-900/80 sticky top-0 z-40">
+        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
+          <button onClick={() => nav(`/play/${token}/results`)}
+            className="text-cream-400 hover:text-gold-300">
+            <ArrowLeft size={20} />
+          </button>
+          <span className="font-display text-gold-300 text-base flex-1 truncate">
+            Travellers — {session?.name}
+          </span>
+          <button onClick={() => window.print()}
+            className="t-screen-btn flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3">
+            <Printer size={14} /> Print
+          </button>
         </div>
+      </header>
 
-        {error && (
-          <div className="no-print max-w-2xl mx-auto px-4 py-4">
+      {/* ── Main content ──────────────────────────────────────────────── */}
+      <div className="min-h-screen bg-felt-gradient">
+        <main className="max-w-2xl mx-auto px-3 py-4 space-y-2">
+
+          {error && (
             <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-3 rounded-lg">
               {error}
             </div>
-          </div>
-        )}
+          )}
 
-        <main className="max-w-2xl mx-auto px-4 py-6 space-y-3">
           {boards.map(board => {
-            const mpMap   = calcMP(board.results);
-            const vul     = vulLabel(board.boardNumber);
-            const isOpen  = openBoard === board.boardNumber;
-            const myResult = board.results.find(r =>
-              r.ns_pair === player?.pairNumber || r.ew_pair === player?.pairNumber
-            );
+            const mpMap  = calcMP(board.results);
+            const isOpen = openBoard === board.boardNumber;
+            const played = board.results.filter(r => !r.is_bye && r.entered_at);
+            const byes   = board.results.filter(r => r.is_bye);
+            const sorted = [...played].sort((a,b)=>(b.ns_score??-9999)-(a.ns_score??-9999));
 
             return (
-              <div key={board.boardNumber}
-                className="traveller-board card-felt relative overflow-hidden">
+              <div key={board.boardNumber} className="t-board rounded-xl overflow-hidden border border-gold-500/20">
 
-                {/* Board header — screen */}
+                {/* Board header */}
                 <button
                   onClick={() => setOpenBoard(isOpen ? null : board.boardNumber)}
-                  className="no-print w-full flex items-center justify-between px-5 py-3
-                             hover:bg-white/5 transition-colors"
+                  className="t-board-header w-full flex items-center justify-between px-4 py-2.5 hover:opacity-90 transition-opacity"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-gold-400/10 border border-gold-400/30
-                                    flex items-center justify-center font-display text-gold-300 text-lg">
-                      {board.boardNumber}
-                    </div>
-                    <div className="text-left">
-                      <div className="text-cream-100 text-sm font-semibold">Board {board.boardNumber}</div>
-                      <div className={`text-xs ${vul.cls}`}>{vul.text}</div>
-                    </div>
-                  </div>
                   <div className="flex items-center gap-3">
-                    {myResult && (
-                      <div className="text-xs text-gold-400">
-                        {myResult.ns_pair === player?.pairNumber ? 'NS' : 'EW'} ·
-                        {myResult.entered_at
-                          ? ` ${contractStr(myResult)}`
-                          : ' not entered'}
-                      </div>
-                    )}
-                    {isOpen
-                      ? <ChevronUp size={16} className="text-cream-400" />
-                      : <ChevronDown size={16} className="text-cream-400" />}
+                    <span className="text-gold-300 font-display text-base">Board {board.boardNumber}</span>
+                    <span className="text-xs text-gold-500/70">{vulText(board.boardNumber)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="t-count text-xs text-gold-500/60">{played.length} results</span>
+                    <span className="t-chevron text-gold-400">
+                      {isOpen ? <ChevronUp size={15}/> : <ChevronDown size={15}/>}
+                    </span>
                   </div>
                 </button>
 
-                {/* Board header — print */}
-                <div className="traveller-board-header print-show">
-                  <span>Board {board.boardNumber}</span>
-                  <span>{vul.text}</span>
+                {/* Results — shown when open on screen, always shown in print */}
+                <div className={`t-board-body ${isOpen ? '' : 'hidden'}`}>
+                  <table className="t-table w-full">
+                    <thead>
+                      <tr>
+                        {/* Compact mobile headers */}
+                        <th className="t-th text-left px-2 py-1.5">NS</th>
+                        <th className="t-th text-left px-2 py-1.5">EW</th>
+                        <th className="t-th text-center px-2 py-1.5">Contract</th>
+                        <th className="t-th text-center px-1 py-1.5">Tr</th>
+                        <th className="t-th text-right px-2 py-1.5">Score</th>
+                        <th className="t-th text-center px-1 py-1.5">NMP</th>
+                        <th className="t-th text-center px-1 py-1.5">EMP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {played.length === 0 && byes.length === 0 && (
+                        <tr>
+                          <td colSpan="7" className="t-td text-center text-cream-400/50 py-2 text-xs">
+                            No results entered
+                          </td>
+                        </tr>
+                      )}
+                      {sorted.map(r => {
+                        const key  = `${r.ns_pair}-${r.ew_pair}`;
+                        const mp   = mpMap[key];
+                        const isMe = r.ns_pair===player?.pairNumber || r.ew_pair===player?.pairNumber;
+                        const score = r.ns_score;
+                        return (
+                          <tr key={key} className={isMe ? 't-my bg-gold-400/10' : 'border-t border-gold-500/10'}>
+                            <td className="t-td px-2 py-1.5">
+                              <span className={`text-xs ${r.ns_pair===player?.pairNumber?'text-gold-300 font-bold':'text-cream-200'}`}>
+                                {getPairName(r.ns_pair)}{r.ns_pair===player?.pairNumber?' ◀':''}
+                              </span>
+                            </td>
+                            <td className="t-td px-2 py-1.5">
+                              <span className={`text-xs ${r.ew_pair===player?.pairNumber?'text-gold-300 font-bold':'text-cream-200'}`}>
+                                {getPairName(r.ew_pair)}{r.ew_pair===player?.pairNumber?' ◀':''}
+                              </span>
+                            </td>
+                            <td className="t-td px-2 py-1.5 text-center font-mono text-xs text-cream-200">
+                              {contractStr(r)}
+                            </td>
+                            <td className="t-td px-1 py-1.5 text-center font-mono text-xs text-cream-300">
+                              {r.tricks??'—'}
+                            </td>
+                            <td className={`t-td px-2 py-1.5 text-right font-mono text-xs font-bold
+                              ${score>0?'text-green-400 t-td-pos':score<0?'text-red-400 t-td-neg':'text-cream-400'}`}>
+                              {score!=null?(score>0?`+${score}`:score):'—'}
+                            </td>
+                            <td className={`t-td px-1 py-1.5 text-center font-mono text-xs font-bold
+                              ${mp?.nsMP!=null&&mp.nsMP>=mp.maxMP*0.6?'text-green-400'
+                                :mp?.nsMP!=null&&mp.nsMP<mp.maxMP*0.4?'text-red-400':'text-cream-300'}`}>
+                              {mp?.nsMP??'—'}
+                            </td>
+                            <td className={`t-td px-1 py-1.5 text-center font-mono text-xs font-bold
+                              ${mp?.ewMP!=null&&mp.ewMP>=mp.maxMP*0.6?'text-green-400'
+                                :mp?.ewMP!=null&&mp.ewMP<mp.maxMP*0.4?'text-red-400':'text-cream-300'}`}>
+                              {mp?.ewMP??'—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {byes.map(r => {
+                        const isMe = r.ns_pair===player?.pairNumber || r.ew_pair===player?.pairNumber;
+                        return (
+                          <tr key={`${r.ns_pair}-${r.ew_pair}`}
+                            className={`border-t border-gold-500/10 ${isMe?'bg-gold-400/10':''}`}>
+                            <td className="t-td px-2 py-1.5 text-xs text-cream-400/60">{getPairName(r.ns_pair)}</td>
+                            <td className="t-td px-2 py-1.5 text-xs text-cream-400/60">{getPairName(r.ew_pair)}</td>
+                            <td colSpan="5" className="t-td px-2 py-1.5 text-center text-xs text-amber-400/70">
+                              BYE — Avg score
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-
-                {/* Results table */}
-                {(isOpen || true) && (
-                  <div className={isOpen ? '' : 'no-print'}>
-                    <table className="traveller-table w-full text-xs">
-                      <thead>
-                        <tr className="no-print border-t border-gold-500/20 bg-felt-900/40">
-                          <th className="px-3 py-2 text-left text-cream-400 font-medium">NS Pair</th>
-                          <th className="px-3 py-2 text-left text-cream-400 font-medium">EW Pair</th>
-                          <th className="px-3 py-2 text-center text-cream-400 font-medium">Contract</th>
-                          <th className="px-3 py-2 text-center text-cream-400 font-medium">Tricks</th>
-                          <th className="px-3 py-2 text-right text-cream-400 font-medium">NS Score</th>
-                          <th className="px-3 py-2 text-center text-cream-400 font-medium">NS MP</th>
-                          <th className="px-3 py-2 text-center text-cream-400 font-medium">EW MP</th>
-                        </tr>
-                        <tr className="print-show">
-                          <th>NS Pair</th>
-                          <th>EW Pair</th>
-                          <th>Contract</th>
-                          <th>Tricks</th>
-                          <th>NS Score</th>
-                          <th>NS MP</th>
-                          <th>EW MP</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {board.results
-                          .sort((a, b) => (b.ns_score ?? -9999) - (a.ns_score ?? -9999))
-                          .map(r => {
-                            const key  = `${r.ns_pair}-${r.ew_pair}`;
-                            const mp   = mpMap[key];
-                            const isMe = r.ns_pair === player?.pairNumber || r.ew_pair === player?.pairNumber;
-                            const score = r.ns_score;
-
-                            if (r.is_bye) {
-                              return (
-                                <tr key={key} className={isMe ? 'my-row' : ''}>
-                                  <td className="no-print px-3 py-2 text-left text-cream-300">
-                                    {getPairName(r.ns_pair)}{isMe && r.ns_pair===player?.pairNumber ? ' ◀' : ''}
-                                  </td>
-                                  <td className="no-print px-3 py-2 text-left text-cream-300">
-                                    {getPairName(r.ew_pair)}{isMe && r.ew_pair===player?.pairNumber ? ' ◀' : ''}
-                                  </td>
-                                  <td className="print-show">{getPairName(r.ns_pair)}</td>
-                                  <td className="print-show">{getPairName(r.ew_pair)}</td>
-                                  <td colSpan="3" className="px-3 py-2 text-center text-amber-400">
-                                    BYE — Average score awarded
-                                  </td>
-                                </tr>
-                              );
-                            }
-
-                            return (
-                              <tr key={key}
-                                className={`${isMe ? 'my-row bg-gold-400/10' : ''} no-print border-t border-gold-500/10`}>
-                                <td className="no-print px-3 py-2 text-left text-cream-200">
-                                  <span className={r.ns_pair===player?.pairNumber?'text-gold-300 font-semibold':''}>
-                                    {getPairName(r.ns_pair)}
-                                    {r.ns_pair===player?.pairNumber?' ◀':''}
-                                  </span>
-                                </td>
-                                <td className="no-print px-3 py-2 text-left text-cream-200">
-                                  <span className={r.ew_pair===player?.pairNumber?'text-gold-300 font-semibold':''}>
-                                    {getPairName(r.ew_pair)}
-                                    {r.ew_pair===player?.pairNumber?' ◀':''}
-                                  </span>
-                                </td>
-                                <td className="print-show">{getPairName(r.ns_pair)}</td>
-                                <td className="print-show">{getPairName(r.ew_pair)}</td>
-                                <td className="px-3 py-2 text-center font-mono text-cream-200">
-                                  {r.entered_at ? contractStr(r) : <span className="text-cream-400/50">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-center font-mono text-cream-300">
-                                  {r.tricks ?? '—'}
-                                </td>
-                                <td className={`px-3 py-2 text-right font-mono font-semibold
-                                  ${score > 0 ? 'text-green-400 score-pos' : score < 0 ? 'text-red-400 score-neg' : 'text-cream-400'}`}>
-                                  {score != null ? (score > 0 ? `+${score}` : score) : '—'}
-                                </td>
-                                <td className={`px-3 py-2 text-center font-mono font-bold
-                                  ${mp?.nsMP >= mp?.maxMP * 0.6 ? 'text-green-400' : mp?.nsMP < mp?.maxMP * 0.4 ? 'text-red-400' : 'text-cream-300'}`}>
-                                  {mp?.nsMP ?? '—'}
-                                </td>
-                                <td className={`px-3 py-2 text-center font-mono font-bold
-                                  ${mp?.ewMP >= mp?.maxMP * 0.6 ? 'text-green-400' : mp?.ewMP < mp?.maxMP * 0.4 ? 'text-red-400' : 'text-cream-300'}`}>
-                                  {mp?.ewMP ?? '—'}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
             );
           })}
 
-          <button onClick={handlePrint}
-            className="no-print btn-ghost w-full flex items-center justify-center gap-2 py-3">
-            <Printer size={16} /> Print Board Travellers / Save as PDF
+          {/* Print button */}
+          <button onClick={() => window.print()}
+            className="t-screen-btn btn-ghost w-full flex items-center justify-center gap-2 py-3 mt-2">
+            <Printer size={16} /> Print Travellers / Save as PDF
           </button>
+          <p className="t-screen-btn text-center text-cream-400/50 text-xs pb-4">
+            Tap Print → "Save as PDF" in your browser print dialog
+          </p>
         </main>
+      </div>
+
+      {/* Footer for print */}
+      <div className="t-footer">
+        Generated by Bridge Club Scorer · {new Date().toLocaleDateString()}
       </div>
     </>
   );
