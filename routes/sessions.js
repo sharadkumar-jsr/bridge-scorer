@@ -160,7 +160,7 @@ router.post('/',
 
         // Scaffold board_results
         for (const slot of movement) {
-          const isBye = phantom !== null && slot.ewPair === phantom;
+          const isBye = phantom !== null && (slot.ewPair === phantom || slot.nsPair === phantom);
           for (const boardNum of slot.boards) {
             await client.query(
               `INSERT INTO board_results
