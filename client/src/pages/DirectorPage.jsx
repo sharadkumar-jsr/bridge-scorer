@@ -1,122 +1,95 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp,
-         Share2, Archive, Trophy, AlertTriangle, Copy, Check } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Loader2, Share2, Trophy, Archive, BarChart2, Copy, Check } from 'lucide-react';
 import Navbar from '../components/Navbar.jsx';
-import ContractPicker from '../components/ContractPicker.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-
-function groupResults(results) {
-  const map = {};
-  for (const r of results) {
-    if (!map[r.round]) map[r.round] = {};
-    if (!map[r.round][r.table_number]) map[r.round][r.table_number] = [];
-    map[r.round][r.table_number].push(r);
-  }
-  return map;
-}
 
 export default function DirectorPage() {
   const { id }       = useParams();
   const { apiFetch } = useAuth();
   const nav          = useNavigate();
 
-  const [session,    setSession]    = useState(null);
-  const [results,    setResults]    = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState('');
-  const [activeResult, setActive]   = useState(null);
-  const [saving,     setSaving]     = useState(false);
-  const [openRound,  setOpenRound]  = useState(null);
-  const [releasing,  setReleasing]  = useState(false);
-  const [archiving,  setArchiving]  = useState(false);
-  const [copied,     setCopied]     = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
-  const [releaseErr, setReleaseErr] = useState('');
+  const [session,   setSession]   = useState(null);
+  const [progress,  setProgress]  = useState([]);
+  const [rounds,    setRounds]    = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState('');
+  const [releasing, setReleasing] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [copied,    setCopied]    = useState(false);
+  const [openRound, setOpenRound] = useState(1);
 
-  useEffect(() => {
-    Promise.all([
-      apiFetch(`/api/sessions/${id}`).then(r => r.json()),
-      apiFetch(`/api/sessions/${id}/results`).then(r => r.json()),
-    ])
-    .then(([s, r]) => {
-      setSession(s);
-      setResults(r);
-      const firstIncomplete = [...new Set(r.map(x => x.round))].sort((a,b)=>a-b)
-        .find(rnd => r.filter(x => x.round === rnd && !x.is_bye).some(x => !x.entered_at));
-      setOpenRound(firstIncomplete ?? r[0]?.round ?? 1);
-    })
-    .catch(e => setError(e.message))
-    .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    try {
+      const [sessRes, progRes, roundsRes] = await Promise.all([
+        apiFetch(`/api/sessions/${id}`),
+        apiFetch(`/api/sessions/${id}/results/progress`),
+        apiFetch(`/api/sessions/${id}/results`),
+      ]);
+      const [sessData, progData, roundsData] = await Promise.all([
+        sessRes.json(), progRes.json(), roundsRes.json(),
+      ]);
+      if (!sessRes.ok) throw new Error(sessData.error);
+      setSession(sessData);
+      setProgress(progData);
+
+      // Group results by round
+      const roundMap = {};
+      for (const r of roundsData) {
+        if (!roundMap[r.round]) roundMap[r.round] = [];
+        roundMap[r.round].push(r);
+      }
+      setRounds(Object.entries(roundMap)
+        .map(([rnd, boards]) => ({ round: Number(rnd), boards }))
+        .sort((a,b) => a.round - b.round));
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
   }, [id]);
 
-  const grouped = useMemo(() => groupResults(results), [results]);
-  const rounds  = Object.keys(grouped).map(Number).sort((a,b)=>a-b);
+  useEffect(() => { load(); }, [load]);
 
-  const played  = results.filter(r => !r.is_bye);
-  const entered = played.filter(r => r.entered_at);
-  const pct     = played.length ? Math.round((entered.length / played.length) * 100) : 0;
-  const allDone = entered.length === played.length && played.length > 0;
-
-  // Per-pair completion for director overview
-  const pairCompletion = useMemo(() => {
-    const map = {};
-    for (const r of played) {
-      for (const p of [r.ns_pair, r.ew_pair]) {
-        if (!map[p]) map[p] = { total: 0, done: 0 };
-        map[p].total++;
-        if (r.entered_at) map[p].done++;
-      }
-    }
-    return map;
-  }, [results]);
-
-  const handleSave = async (contract) => {
-    if (!activeResult) return;
-    setSaving(true);
-    try {
-      const res = await apiFetch(`/api/sessions/${id}/results/${activeResult.id}`, {
-        method: 'PUT', body: JSON.stringify(contract),
-      });
-      const updated = await res.json();
-      if (!res.ok) throw new Error(updated.error ?? 'Save failed');
-      setResults(prev => prev.map(r => r.id === updated.id ? updated : r));
-      setActive(null);
-    } catch (err) { setError(err.message); }
-    finally { setSaving(false); }
-  };
+  // Poll every 15 seconds
+  useEffect(() => {
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, [load]);
 
   const handleRelease = async () => {
-    setReleaseErr(''); setReleasing(true);
+    if (!confirm('Release final results to all players?')) return;
+    setReleasing(true);
     try {
-      const res  = await apiFetch(`/api/sessions/${id}/release`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setSession(s => ({ ...s, results_released: true, status: 'completed' }));
-    } catch (err) { setReleaseErr(err.message); }
+      await apiFetch(`/api/sessions/${id}/release`, { method: 'PATCH' });
+      await load();
+    } catch (e) { setError(e.message); }
     finally { setReleasing(false); }
   };
 
   const handleArchive = async () => {
-    if (!confirm('Archive this session? It will be hidden from the main list but all data is kept.')) return;
+    if (!confirm('Archive this session? Players will no longer be able to enter scores.')) return;
     setArchiving(true);
     try {
-      await apiFetch(`/api/sessions/${id}/archive`, { method: 'POST' });
+      await apiFetch(`/api/sessions/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'archived' }),
+      });
       nav('/sessions');
-    } catch (err) { setError(err.message); setArchiving(false); }
+    } catch (e) { setError(e.message); setArchiving(false); }
   };
 
   const copyInviteLink = () => {
-    navigator.clipboard.writeText(session?.inviteUrl ?? '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (!session?.invite_token) return;
+    const url = `${window.location.origin}/play/${session.invite_token}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
-  const whatsappShare = () => {
-    const text = encodeURIComponent(
-      `🃏 *${session?.name}*\nJoin our bridge session and enter your scores:\n${session?.inviteUrl}`
-    );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+  const shareWhatsApp = () => {
+    if (!session?.invite_token) return;
+    const url  = `${window.location.origin}/play/${session.invite_token}`;
+    const text = `Join our Bridge session "${session.name}"!\nClick to enter your scores: ${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   if (loading) return (
@@ -125,204 +98,201 @@ export default function DirectorPage() {
     </div>
   );
 
+  const totalBoards   = progress.reduce((s, p) => s + p.total, 0);
+  const enteredBoards = progress.reduce((s, p) => s + p.entered, 0);
+  const pct           = totalBoards ? Math.round((enteredBoards / totalBoards) * 100) : 0;
+
   return (
     <div className="min-h-screen bg-felt-gradient">
-      <Navbar title={session?.name ?? 'Director'} sessionId={id} backTo="/sessions" />
+      <Navbar title={session?.name ?? 'Director'} backTo="/sessions" />
 
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-
-        {/* Invite Link card */}
-        <div className="card-felt relative p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-cream-100 flex items-center gap-1.5">
-              <Share2 size={14} className="text-gold-400" /> Player Invite Link
-            </span>
-            <button
-              onClick={() => setShowInvite(s => !s)}
-              className="text-xs text-cream-400 hover:text-gold-300"
-            >
-              {showInvite ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          {showInvite && session?.inviteUrl && (
-            <div className="space-y-2">
-              <div className="bg-felt-700 rounded-lg px-3 py-2 font-mono text-xs text-cream-300 break-all">
-                {session.inviteUrl}
-              </div>
-              <div className="flex gap-2">
-                <button onClick={copyInviteLink} className="btn-ghost flex-1 flex items-center justify-center gap-1.5 text-sm py-2">
-                  {copied ? <><Check size={14} className="text-green-400" /> Copied!</> : <><Copy size={14} /> Copy Link</>}
-                </button>
-                <button onClick={whatsappShare} className="flex-1 text-sm py-2 rounded-lg bg-green-700 hover:bg-green-600 text-white font-semibold transition-colors">
-                  📱 Share on WhatsApp
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Progress */}
-        <div className="card-felt relative p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-cream-400">Overall Progress</span>
-            <span className="text-sm font-mono text-gold-300">{entered.length}/{played.length} boards</span>
-          </div>
-          <div className="h-2 bg-felt-700 rounded-full overflow-hidden mb-3">
-            <div className="h-full bg-gold-400 rounded-full transition-all duration-500"
-                 style={{ width: `${pct}%` }} />
-          </div>
-
-          {/* Per-pair completion */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
-            {Object.entries(pairCompletion).map(([pNum, { total, done }]) => (
-              <div key={pNum} className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs
-                ${done === total ? 'bg-green-900/30 border border-green-700/30' : 'bg-felt-700'}`}>
-                <span className="text-cream-300">Pair {pNum}</span>
-                <span className={done === total ? 'text-green-400 font-mono' : 'text-cream-400 font-mono'}>
-                  {done}/{total}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Release / Archive actions */}
-          {session?.results_released ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-green-400 text-sm">
-                <CheckCircle2 size={15} /> Results released to all players
-              </div>
-              <button onClick={handleArchive} disabled={archiving}
-                className="btn-ghost w-full flex items-center justify-center gap-2 text-sm py-2">
-                <Archive size={14} /> {archiving ? 'Archiving…' : 'Archive Session'}
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {releaseErr && (
-                <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-3 py-2 rounded-lg flex items-start gap-2">
-                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                  {releaseErr}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={handleRelease}
-                  disabled={releasing}
-                  className="btn-gold flex-1 flex items-center justify-center gap-2"
-                >
-                  <Trophy size={15} />
-                  {releasing ? 'Releasing…' : 'Release Final Results'}
-                </button>
-                <button onClick={handleArchive} disabled={archiving}
-                  className="btn-ghost px-3" title="Archive session">
-                  <Archive size={16} />
-                </button>
-              </div>
-              {!allDone && (
-                <p className="text-xs text-cream-400/60 text-center">
-                  {played.length - entered.length} boards not yet entered — you can still release, but missing boards won't count
-                </p>
-              )}
-            </div>
-          )}
-        </div>
+      <main className="max-w-3xl mx-auto px-4 py-8 space-y-5">
 
         {error && (
-          <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-2.5 rounded-lg">
+          <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-3 rounded-lg">
             {error}
           </div>
         )}
 
-        {/* Rounds accordion */}
-        {rounds.map(rnd => {
-          const tables    = grouped[rnd] ?? {};
-          const tableNums = Object.keys(tables).map(Number).sort((a,b)=>a-b);
-          const roundDone = Object.values(tables).flat().filter(r => !r.is_bye).every(r => r.entered_at);
-          const isOpen    = openRound === rnd;
-
-          return (
-            <div key={rnd} className="card-felt relative overflow-hidden">
-              <button
-                onClick={() => setOpenRound(isOpen ? null : rnd)}
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/5 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="font-display text-lg text-cream-100">Round {rnd}</span>
-                  {roundDone
-                    ? <CheckCircle2 size={16} className="text-green-400" />
-                    : <Clock size={16} className="text-cream-400" />}
-                </div>
-                {isOpen ? <ChevronUp size={18} className="text-cream-400" /> : <ChevronDown size={18} className="text-cream-400" />}
-              </button>
-
-              {isOpen && (
-                <div className="border-t border-gold-500/20">
-                  {tableNums.map(tbl => {
-                    const boards = tables[tbl] ?? [];
-                    return (
-                      <div key={tbl} className="border-b border-gold-500/10 last:border-0">
-                        <div className="px-5 py-2 bg-felt-900/40 text-xs text-cream-400 uppercase tracking-widest">
-                          Table {tbl} — NS Pair {boards[0]?.ns_pair} · EW Pair {boards[0]?.ew_pair}
-                        </div>
-                        <div className="divide-y divide-gold-500/10">
-                          {boards.filter(b => !b.is_bye).map(board => {
-                            const isActiveBoard = activeResult?.id === board.id;
-                            return (
-                              <div key={board.id}>
-                                <button
-                                  onClick={() => setActive(isActiveBoard ? null : board)}
-                                  className={`w-full px-5 py-3 flex items-center justify-between
-                                             hover:bg-white/5 transition-colors text-left
-                                             ${isActiveBoard ? 'bg-gold-400/5' : ''}`}
-                                >
-                                  <div className="flex items-center gap-3">
-                                    <span className={`w-7 h-7 rounded-full border flex items-center justify-center
-                                                     text-xs font-mono flex-shrink-0
-                                                     ${board.entered_at
-                                                       ? 'border-green-500/50 bg-green-900/30 text-green-400'
-                                                       : 'border-gold-500/30 text-cream-400'}`}>
-                                      {board.board_number}
-                                    </span>
-                                    <span className="text-sm text-cream-300">Board {board.board_number}</span>
-                                  </div>
-                                  <div className="text-right">
-                                    {board.entered_at ? (
-                                      <span className="text-xs font-mono text-green-400">
-                                        {board.declarer}{board.level}{board.suit}
-                                        {board.doubled !== 'none' ? (board.doubled === 'doubled' ? 'X' : 'XX') : ''}
-                                        {' = '}{board.tricks}
-                                        <span className={`ml-2 ${board.ns_score > 0 ? 'text-green-300' : board.ns_score < 0 ? 'text-red-400' : 'text-cream-400'}`}>
-                                          {board.ns_score > 0 ? '+' : ''}{board.ns_score}
-                                        </span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-cream-400/60">tap to enter</span>
-                                    )}
-                                  </div>
-                                </button>
-                                {isActiveBoard && (
-                                  <div className="px-5 py-5 bg-felt-900/60 border-t border-gold-500/20">
-                                    <ContractPicker
-                                      boardNumber={board.board_number}
-                                      nsPair={board.ns_pair}
-                                      ewPair={board.ew_pair}
-                                      onSubmit={handleSave}
-                                      loading={saving}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+        {/* Session info */}
+        <div className="card-felt relative p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-display text-2xl text-cream-100">{session?.name}</h2>
+              <p className="text-cream-400 text-sm mt-1">
+                {session?.date} · {session?.tables_count} tables ·
+                {session?.num_boards} boards · {session?.num_rounds} rounds ·
+                {session?.movement_type}
+              </p>
             </div>
-          );
-        })}
+            <span className={`text-xs px-3 py-1 rounded-full font-medium flex-shrink-0
+              ${session?.status === 'active'    ? 'bg-green-900/40 text-green-400 border border-green-700/30' :
+                session?.status === 'completed' ? 'bg-blue-900/40 text-blue-400 border border-blue-700/30'   :
+                                                  'bg-felt-700 text-cream-400'}`}>
+              {session?.status}
+            </span>
+          </div>
+        </div>
+
+        {/* Invite link */}
+        {session?.invite_token && (
+          <div className="card-felt relative p-4">
+            <p className="text-xs text-cream-400 mb-3 uppercase tracking-widest">
+              Player Invite Link
+            </p>
+            <div className="flex gap-2">
+              <button onClick={shareWhatsApp}
+                className="flex items-center gap-2 bg-green-700/40 hover:bg-green-700/60
+                           border border-green-600/30 text-green-300 text-sm px-4 py-2.5
+                           rounded-lg transition-colors flex-1 justify-center">
+                <Share2 size={14} /> Share via WhatsApp
+              </button>
+              <button onClick={copyInviteLink}
+                className="flex items-center gap-2 border border-gold-500/30 text-cream-400
+                           hover:text-gold-300 hover:border-gold-400/50 text-sm px-4 py-2.5
+                           rounded-lg transition-colors">
+                {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Overall progress */}
+        <div className="card-felt relative p-5">
+          <div className="flex justify-between text-sm mb-2">
+            <span className="text-cream-400">Overall Progress</span>
+            <span className="font-mono text-gold-300">{enteredBoards}/{totalBoards} boards</span>
+          </div>
+          <div className="h-2.5 bg-felt-700 rounded-full overflow-hidden mb-3">
+            <div className="h-full bg-gold-400 rounded-full transition-all duration-700"
+                 style={{ width: `${pct}%` }} />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {progress.map(p => (
+              <div key={p.pair_number} className={`text-xs flex items-center justify-between
+                px-3 py-2 rounded-lg border
+                ${p.entered === p.total
+                  ? 'bg-green-900/20 border-green-700/30 text-green-400'
+                  : 'border-gold-500/20 text-cream-400'}`}>
+                <span>Pair {p.pair_number}</span>
+                <span className="font-mono">{p.entered}/{p.total}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="grid grid-cols-2 gap-3">
+
+          {/* Full Results */}
+          <button onClick={() => nav(`/sessions/${id}/full-results`)}
+            className="flex items-center justify-center gap-2 border border-gold-500/30
+                       text-cream-300 hover:text-gold-300 hover:border-gold-400/50
+                       text-sm px-4 py-3 rounded-xl transition-colors">
+            <BarChart2 size={16} /> Full Results & Travellers
+          </button>
+
+          {/* Leaderboard */}
+          <button onClick={() => nav(`/sessions/${id}/leaderboard`)}
+            className="flex items-center justify-center gap-2 border border-gold-500/30
+                       text-cream-300 hover:text-gold-300 hover:border-gold-400/50
+                       text-sm px-4 py-3 rounded-xl transition-colors">
+            <Trophy size={16} /> Live Leaderboard
+          </button>
+
+          {/* Release results */}
+          {!session?.results_released ? (
+            <button onClick={handleRelease} disabled={releasing}
+              className="col-span-2 btn-gold flex items-center justify-center gap-2 py-3">
+              {releasing ? <Loader2 size={16} className="animate-spin" /> : <Trophy size={16} />}
+              {releasing ? 'Releasing…' : 'Release Final Results'}
+            </button>
+          ) : (
+            <div className="col-span-2 bg-green-900/30 border border-green-700/30
+                            text-green-400 text-sm text-center py-3 rounded-xl">
+              ✅ Results released to players
+            </div>
+          )}
+
+          {/* Archive */}
+          <button onClick={handleArchive} disabled={archiving}
+            className="col-span-2 flex items-center justify-center gap-2 border
+                       border-gold-500/20 text-cream-400/60 hover:text-cream-300
+                       hover:border-gold-500/40 text-sm px-4 py-2.5 rounded-xl transition-colors">
+            {archiving ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
+            {archiving ? 'Archiving…' : 'Archive Session'}
+          </button>
+        </div>
+
+        {/* Rounds */}
+        <div className="space-y-3">
+          {rounds.map(({ round, boards }) => {
+            const isOpen    = openRound === round;
+            const rndTotal  = boards.filter(b => !b.is_bye).length;
+            const rndEntered = boards.filter(b => !b.is_bye && b.entered_at).length;
+
+            return (
+              <div key={round} className="card-felt relative overflow-hidden">
+                <button onClick={() => setOpenRound(isOpen ? null : round)}
+                  className="w-full flex items-center justify-between px-5 py-3
+                             hover:bg-white/5 transition-colors">
+                  <span className="font-display text-lg text-cream-100">Round {round}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono text-cream-400">
+                      {rndEntered}/{rndTotal}
+                    </span>
+                    <span className="text-cream-400 text-sm">{isOpen ? '▲' : '▼'}</span>
+                  </div>
+                </button>
+
+                {isOpen && (
+                  <div className="border-t border-gold-500/20">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-felt-900/40 text-cream-400">
+                          <th className="px-4 py-2 text-left">Board</th>
+                          <th className="px-4 py-2 text-center">NS</th>
+                          <th className="px-4 py-2 text-center">EW</th>
+                          <th className="px-4 py-2 text-center">Contract</th>
+                          <th className="px-4 py-2 text-right">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gold-500/10">
+                        {boards.map(b => {
+                          if (b.is_bye) return (
+                            <tr key={b.id} className="opacity-50">
+                              <td className="px-4 py-2 font-mono text-cream-400">{b.board_number}</td>
+                              <td className="px-4 py-2 text-center text-cream-400">{b.ns_pair}</td>
+                              <td className="px-4 py-2 text-center text-cream-400">{b.ew_pair}</td>
+                              <td colSpan="2" className="px-4 py-2 text-center text-amber-400/70">BYE</td>
+                            </tr>
+                          );
+                          const contract = b.entered_at && b.level != null
+                            ? `${b.declarer}${b.level}${b.suit}${b.doubled==='doubled'?'X':b.doubled==='redoubled'?'XX':''}=${b.tricks}`
+                            : '—';
+                          const score = b.ns_score;
+                          return (
+                            <tr key={b.id}>
+                              <td className="px-4 py-2 font-mono text-cream-300">{b.board_number}</td>
+                              <td className="px-4 py-2 text-center text-cream-200">{b.ns_pair}</td>
+                              <td className="px-4 py-2 text-center text-cream-200">{b.ew_pair}</td>
+                              <td className="px-4 py-2 text-center font-mono text-cream-200">{contract}</td>
+                              <td className={`px-4 py-2 text-right font-mono font-bold
+                                ${score>0?'text-green-400':score<0?'text-red-400':'text-cream-400'}`}>
+                                {b.entered_at && score!=null?(score>0?`+${score}`:score):'—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </main>
     </div>
   );
