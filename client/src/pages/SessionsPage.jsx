@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, CalendarDays, Users, ChevronRight, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, Plus, Archive, ChevronRight } from 'lucide-react';
 import Navbar from '../components/Navbar.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
-function statusBadge(s) {
-  if (s === 'active')    return <span className="badge-active">● Live</span>;
-  if (s === 'completed') return <span className="badge-completed">✓ Done</span>;
-  return <span className="badge-setup">Setup</span>;
-}
-
 export default function SessionsPage() {
-  const { apiFetch } = useAuth();
-  const nav = useNavigate();
+  const { apiFetch, logout } = useAuth();
+  const nav                  = useNavigate();
+
   const [sessions, setSessions] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
@@ -20,72 +15,85 @@ export default function SessionsPage() {
   useEffect(() => {
     apiFetch('/api/sessions')
       .then(r => r.json())
-      .then(setSessions)
+      .then(data => { setSessions(Array.isArray(data) ? data : []); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
+  function statusColour(status) {
+    if (status === 'active')    return 'bg-green-900/40 text-green-400 border-green-700/30';
+    if (status === 'completed') return 'bg-blue-900/40 text-blue-400 border-blue-700/30';
+    return 'bg-felt-700 text-cream-400 border-transparent';
+  }
+
+  function sessionRoute(s) {
+    if (s.status === 'setup')   return `/sessions/${s.id}/setup`;
+    return `/sessions/${s.id}/director`;
+  }
+
   return (
     <div className="min-h-screen bg-felt-gradient">
-      <Navbar title="Sessions" />
+      <Navbar title="Club Sessions" onLogout={logout} />
 
       <main className="max-w-3xl mx-auto px-4 py-8">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="font-display text-2xl text-cream-100">Club Sessions</h2>
-            <p className="text-cream-400 text-sm mt-0.5">Select a session to manage or score</p>
+          <h2 className="font-display text-2xl text-cream-100">Sessions</h2>
+          <div className="flex gap-2">
+            <button onClick={() => nav('/sessions/archived')}
+              className="flex items-center gap-1.5 text-sm border border-gold-500/30
+                         text-cream-400 hover:text-gold-300 hover:border-gold-400/50
+                         px-3 py-2 rounded-lg transition-colors">
+              <Archive size={14} /> Archived
+            </button>
+            <button onClick={() => nav('/sessions/new')}
+              className="flex items-center gap-1.5 text-sm btn-gold px-4 py-2">
+              <Plus size={14} /> New Session
+            </button>
           </div>
-          <Link to="/sessions/new" className="btn-gold flex items-center gap-2">
-            <Plus size={17} /> New Session
-          </Link>
         </div>
 
-        {/* List */}
-        {loading && (
-          <div className="flex justify-center py-20 text-cream-400">
-            <Loader2 size={28} className="animate-spin" />
+        {error && (
+          <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+            {error}
           </div>
         )}
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+
+        {loading && (
+          <div className="flex justify-center py-20">
+            <Loader2 size={28} className="animate-spin text-gold-400" />
+          </div>
+        )}
 
         {!loading && sessions.length === 0 && (
           <div className="card-felt relative p-10 text-center">
-            <div className="text-4xl text-gold-500/30 mb-3 select-none">♠ ♥ ♦ ♣</div>
-            <p className="text-cream-400">No sessions yet. Create your first one.</p>
-            <Link to="/sessions/new" className="btn-gold inline-flex items-center gap-2 mt-5">
-              <Plus size={16} /> Create Session
-            </Link>
+            <p className="text-cream-400 mb-4">No sessions yet.</p>
+            <button onClick={() => nav('/sessions/new')} className="btn-gold">
+              Create First Session
+            </button>
           </div>
         )}
 
         <div className="space-y-3">
           {sessions.map(s => (
-            <div
-              key={s.id}
-              className="card-felt relative p-5 flex items-center gap-4 cursor-pointer
-                         hover:border-gold-400/60 transition-colors group"
-              onClick={() => {
-                if (s.status === 'setup') nav(`/sessions/${s.id}/setup`);
-                else nav(`/sessions/${s.id}/director`);
-              }}
-            >
+            <button key={s.id} onClick={() => nav(sessionRoute(s))}
+              className="w-full card-felt relative p-5 flex items-center gap-4
+                         hover:bg-white/5 transition-colors text-left">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-display text-lg text-cream-100 truncate">{s.name}</span>
-                  {statusBadge(s.status)}
+                  <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${statusColour(s.status)}`}>
+                    {s.status}
+                  </span>
                 </div>
-                <div className="flex gap-4 text-xs text-cream-400">
-                  <span className="flex items-center gap-1">
-                    <CalendarDays size={12} /> {s.date}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users size={12} /> {s.tables_count} tables · {s.num_boards} boards
-                  </span>
+                <div className="text-xs text-cream-400 flex gap-3">
+                  <span>{s.date}</span>
+                  <span>{s.tables_count} tables</span>
+                  <span>{s.num_boards} boards</span>
+                  <span>{s.movement_type}</span>
                 </div>
               </div>
-              <ChevronRight size={18} className="text-cream-400/40 group-hover:text-gold-400 transition-colors" />
-            </div>
+              <ChevronRight size={18} className="text-cream-400/50 flex-shrink-0" />
+            </button>
           ))}
         </div>
       </main>
