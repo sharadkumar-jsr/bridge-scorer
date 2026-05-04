@@ -352,6 +352,11 @@ export default function PlayerResults() {
             <ClipboardList size={16} /> View Board Travellers
           </button>
 
+          <button onClick={() => nav(`/play/${token}/pair-results`)}
+            className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
+            <ClipboardList size={16} /> View Pair-wise Results
+          </button>
+
           <button onClick={() => window.print()}
             className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
             <Printer size={16} /> Print Results / Save as PDF
