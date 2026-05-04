@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import SuitSymbol from './SuitSymbol.jsx';
 
 // ── Vulnerability ─────────────────────────────────────────────
 const VUL_CYCLE = [
@@ -9,32 +8,36 @@ const VUL_CYCLE = [
 function getVuln(b) { return VUL_CYCLE[(b - 1) % 16]; }
 function isVul(side, b) { const v = getVuln(b); return v === 'both' || v === side; }
 
-// ── Inline score calculator (mirrors scoring-engine.js) ───────
+// ── Suit symbols — plain text so no import needed ─────────────
+const SUIT_DISPLAY = {
+  C:  { symbol: '♣', color: 'text-cream-200' },
+  D:  { symbol: '♦', color: 'text-red-400'   },
+  H:  { symbol: '♥', color: 'text-red-400'   },
+  S:  { symbol: '♠', color: 'text-cream-200' },
+  NT: { symbol: 'NT', color: 'text-gold-300'  },
+};
+
+// ── Inline score calculator ───────────────────────────────────
 function calcScore({ declarer, level, suit, doubled, tricks, boardNumber }) {
   if (level === 0) return 0;
   const declaringNS = declarer === 'N' || declarer === 'S';
   const vul = isVul(declaringNS ? 'ns' : 'ew', boardNumber);
   const needed = 6 + level;
   const result = tricks - needed;
-
   let score;
+
   if (result >= 0) {
-    // Base trick score
     let base;
-    if (suit === 'NT')                  base = 10 + 30 * level;
+    if (suit === 'NT')                     base = 10 + 30 * level;
     else if (suit === 'H' || suit === 'S') base = 30 * level;
-    else                                base = 20 * level;
+    else                                   base = 20 * level;
     if (doubled === 'doubled')   base *= 2;
     if (doubled === 'redoubled') base *= 4;
-
     const isGame = base >= 100;
-
-    // Overtrick value
     let otv;
-    if (doubled === 'none')       otv = (suit === 'C' || suit === 'D') ? 20 : 30;
-    else if (doubled === 'doubled')    otv = vul ? 200 : 100;
-    else                          otv = vul ? 400 : 200;
-
+    if (doubled === 'none')      otv = (suit === 'C' || suit === 'D') ? 20 : 30;
+    else if (doubled === 'doubled')   otv = vul ? 200 : 100;
+    else                         otv = vul ? 400 : 200;
     score = base + result * otv;
     if (doubled === 'doubled')   score += 50;
     if (doubled === 'redoubled') score += 100;
@@ -43,20 +46,15 @@ function calcScore({ declarer, level, suit, doubled, tricks, boardNumber }) {
     if (level === 6) score += vul ? 750  : 500;
     if (level === 7) score += vul ? 1500 : 1000;
   } else {
-    // Undoubled: simple flat rate per trick
+    // Undoubled: flat rate
     if (doubled === 'none') {
       score = -(vul ? 100 : 50) * (-result);
     } else {
-      // Doubled / Redoubled: sliding scale
       const mult = doubled === 'redoubled' ? 2 : 1;
       let penalty = 0;
       for (let i = 1; i <= -result; i++) {
-        if (vul) {
-          penalty += (i === 1 ? 200 : 300) * mult;
-        } else {
-          const base = i === 1 ? 100 : i <= 3 ? 200 : 300;
-          penalty += base * mult;
-        }
+        if (vul) { penalty += (i === 1 ? 200 : 300) * mult; }
+        else { const base = i === 1 ? 100 : i <= 3 ? 200 : 300; penalty += base * mult; }
       }
       score = -penalty;
     }
@@ -73,12 +71,12 @@ const DOUBLES   = [
 ];
 const DECLARERS = ['N','S','E','W'];
 
-function ToggleBtn({ selected, onClick, children, className = '' }) {
+function Btn({ selected, onClick, children, className = '' }) {
   return (
     <button type="button" onClick={onClick}
-      className={`rounded-lg border transition-all duration-100 font-mono text-sm px-3 py-2
+      className={`rounded-lg border transition-all duration-100 font-mono text-sm
         ${selected
-          ? 'bg-gold-400 border-gold-400 text-felt-950 font-bold shadow-gold'
+          ? 'bg-gold-400 border-gold-400 text-felt-950 font-bold'
           : 'border-gold-500/30 text-cream-300 hover:border-gold-400/60 hover:text-cream-100'
         } ${className}`}>
       {children}
@@ -98,27 +96,24 @@ export default function ContractPicker({ boardNumber, nsPair, ewPair, side, onSu
   const vulEW = isVul('ew', boardNumber);
   const needed = level !== null ? 6 + level : null;
 
-  // ── Live score preview ───────────────────────────────────────
-  const liveScore = useMemo(() => {
+  // Live score preview
+  const liveNSScore = useMemo(() => {
     if (passedOut) return 0;
     if (level === null || suit === null || declarer === null || tricks === null) return null;
     return calcScore({ declarer, level, suit, doubled, tricks, boardNumber });
   }, [passedOut, level, suit, doubled, declarer, tricks, boardNumber]);
 
-  // Score from this pair's perspective
   const myScore = useMemo(() => {
-    if (liveScore === null) return null;
-    if (side === 'EW') return -liveScore;
-    return liveScore;
-  }, [liveScore, side]);
+    if (liveNSScore === null) return null;
+    return side === 'EW' ? -liveNSScore : liveNSScore;
+  }, [liveNSScore, side]);
 
-  const contractReady = !passedOut && level !== null && suit !== null && declarer !== null && tricks !== null;
-  const ready = passedOut || contractReady;
+  const ready = passedOut || (level !== null && suit !== null && declarer !== null && tricks !== null);
 
   const handleSubmit = () => {
     if (!ready) return;
     if (passedOut) {
-      onSubmit({ declarer: 'N', level: 0, suit: 'NT', doubled: 'none', tricks: 0 });
+      onSubmit({ declarer:'N', level:0, suit:'NT', doubled:'none', tricks:0 });
     } else {
       onSubmit({ declarer, level, suit, doubled, tricks });
     }
@@ -129,37 +124,33 @@ export default function ContractPicker({ boardNumber, nsPair, ewPair, side, onSu
     setDoubled('none'); setDeclarer(null); setTricks(null);
   };
 
-  const handlePassedOut = () => {
-    setPassedOut(p => !p);
-    setLevel(null); setSuit(null); setDoubled('none'); setDeclarer(null); setTricks(null);
-  };
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
 
-      {/* Board header */}
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex gap-4">
-          <span className="text-cream-400">NS <span className="text-cream-100 font-semibold">Pair {nsPair}</span></span>
-          <span className="text-cream-400">EW <span className="text-cream-100 font-semibold">Pair {ewPair}</span></span>
+      {/* Vulnerability */}
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex gap-3">
+          <span className="text-cream-400">NS <span className="text-cream-200 font-semibold">Pair {nsPair}</span></span>
+          <span className="text-cream-400">EW <span className="text-cream-200 font-semibold">Pair {ewPair}</span></span>
         </div>
-        <div className="flex gap-2 text-xs">
-          <span className={`px-2 py-0.5 rounded ${vulNS ? 'bg-red-900/70 text-red-300' : 'bg-felt-700 text-cream-400'}`}>
+        <div className="flex gap-1.5">
+          <span className={`px-1.5 py-0.5 rounded text-xs
+            ${vulNS ? 'bg-red-900/60 text-red-300' : 'bg-felt-700 text-cream-400'}`}>
             NS {vulNS ? 'Vul' : 'NV'}
           </span>
-          <span className={`px-2 py-0.5 rounded ${vulEW ? 'bg-red-900/70 text-red-300' : 'bg-felt-700 text-cream-400'}`}>
+          <span className={`px-1.5 py-0.5 rounded text-xs
+            ${vulEW ? 'bg-red-900/60 text-red-300' : 'bg-felt-700 text-cream-400'}`}>
             EW {vulEW ? 'Vul' : 'NV'}
           </span>
         </div>
       </div>
 
       {/* Passed Out button */}
-      <button type="button" onClick={handlePassedOut}
-        className={`w-full rounded-xl border-2 py-3 font-semibold text-base transition-all duration-150
+      <button type="button" onClick={() => { setPassedOut(p => !p); if (!passedOut) reset(); setPassedOut(true); }}
+        className={`w-full rounded-xl border-2 py-2.5 font-semibold text-sm transition-all
           ${passedOut
             ? 'bg-amber-700/40 border-amber-500 text-amber-300'
-            : 'border-gold-500/30 text-cream-400 hover:border-gold-400/50 hover:text-cream-200'
-          }`}>
+            : 'border-gold-500/30 text-cream-400 hover:border-gold-400/50 hover:text-cream-200'}`}>
         {passedOut ? '✓ Passed Out (All Pass)' : 'All Pass — Board Passed Out'}
       </button>
 
@@ -167,69 +158,83 @@ export default function ContractPicker({ boardNumber, nsPair, ewPair, side, onSu
         <>
           {/* Level */}
           <div>
-            <p className="text-xs text-cream-400 mb-2 uppercase tracking-widest">Level</p>
-            <div className="flex gap-2">
+            <p className="text-xs text-cream-400 mb-1.5 uppercase tracking-widest">Level</p>
+            {/* 7 level buttons in one row — use smaller padding on small screens */}
+            <div className="grid grid-cols-7 gap-1">
               {LEVELS.map(l => (
-                <ToggleBtn key={l} selected={level === l} onClick={() => setLevel(l)}>{l}</ToggleBtn>
+                <Btn key={l} selected={level === l} onClick={() => setLevel(l)}
+                  className="py-2 text-center">
+                  {l}
+                </Btn>
               ))}
             </div>
           </div>
 
-          {/* Suit */}
+          {/* Suit — IMPORTANT: use grid so NT never gets pushed off screen */}
           <div>
-            <p className="text-xs text-cream-400 mb-2 uppercase tracking-widest">Suit</p>
-            <div className="flex gap-2">
-              {SUITS.map(s => (
-                <ToggleBtn key={s} selected={suit === s} onClick={() => setSuit(s)} className="min-w-[3rem]">
-                  <SuitSymbol suit={s} />
-                </ToggleBtn>
-              ))}
+            <p className="text-xs text-cream-400 mb-1.5 uppercase tracking-widest">Suit</p>
+            <div className="grid grid-cols-5 gap-1">
+              {SUITS.map(s => {
+                const d = SUIT_DISPLAY[s];
+                return (
+                  <button key={s} type="button" onClick={() => setSuit(s)}
+                    className={`rounded-lg border py-2.5 text-center transition-all text-base
+                      ${suit === s
+                        ? 'bg-gold-400 border-gold-400 text-felt-950 font-bold'
+                        : 'border-gold-500/30 hover:border-gold-400/60'}`}>
+                    <span className={suit === s ? 'text-felt-950' : d.color}>
+                      {d.symbol}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Doubled */}
-          <div>
-            <p className="text-xs text-cream-400 mb-2 uppercase tracking-widest">Doubled</p>
-            <div className="flex gap-2">
-              {DOUBLES.map(d => (
-                <ToggleBtn key={d.value} selected={doubled === d.value} onClick={() => setDoubled(d.value)}>
-                  {d.label}
-                </ToggleBtn>
-              ))}
+          {/* Declarer + Doubled on same row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs text-cream-400 mb-1.5 uppercase tracking-widest">Declarer</p>
+              <div className="grid grid-cols-4 gap-1">
+                {DECLARERS.map(d => (
+                  <Btn key={d} selected={declarer === d} onClick={() => setDeclarer(d)}
+                    className="py-2 text-center">
+                    {d}
+                  </Btn>
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* Declarer */}
-          <div>
-            <p className="text-xs text-cream-400 mb-2 uppercase tracking-widest">Declarer</p>
-            <div className="flex gap-2">
-              {DECLARERS.map(d => (
-                <ToggleBtn key={d} selected={declarer === d} onClick={() => setDeclarer(d)} className="min-w-[3rem]">
-                  {d}
-                </ToggleBtn>
-              ))}
+            <div>
+              <p className="text-xs text-cream-400 mb-1.5 uppercase tracking-widest">Doubled</p>
+              <div className="grid grid-cols-3 gap-1">
+                {DOUBLES.map(d => (
+                  <Btn key={d.value} selected={doubled === d.value} onClick={() => setDoubled(d.value)}
+                    className="py-2 text-center text-xs">
+                    {d.label}
+                  </Btn>
+                ))}
+              </div>
             </div>
           </div>
 
           {/* Tricks */}
           <div>
-            <p className="text-xs text-cream-400 mb-2 uppercase tracking-widest">
-              Tricks taken{needed ? ` (need ${needed} to make)` : ''}
+            <p className="text-xs text-cream-400 mb-1.5 uppercase tracking-widest">
+              Tricks{needed ? ` (need ${needed} to make)` : ''}
             </p>
-            <div className="grid grid-cols-7 gap-1.5">
-              {Array.from({ length: 14 }, (_, i) => i).map(t => {
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({length:14},(_,i)=>i).map(t => {
                 const made = needed !== null && t >= needed;
                 return (
                   <button key={t} type="button" onClick={() => setTricks(t)}
-                    className={`rounded-lg py-2 text-sm font-mono border transition-all duration-100
+                    className={`rounded-lg py-2 text-xs font-mono border transition-all
                       ${tricks === t
                         ? made
                           ? 'bg-green-700 border-green-500 text-white font-bold'
                           : 'bg-red-900 border-red-700 text-red-200 font-bold'
                         : made
                           ? 'border-green-800/50 text-green-400 hover:border-green-600'
-                          : 'border-gold-500/20 text-cream-400 hover:border-gold-500/40'
-                      }`}>
+                          : 'border-gold-500/20 text-cream-400 hover:border-gold-500/40'}`}>
                     {t}
                   </button>
                 );
@@ -239,15 +244,12 @@ export default function ContractPicker({ boardNumber, nsPair, ewPair, side, onSu
         </>
       )}
 
-      {/* ── LIVE SCORE PREVIEW ─────────────────────────────────── */}
+      {/* Score preview */}
       {myScore !== null && (
         <div className={`rounded-xl border px-4 py-3 transition-all
-          ${myScore > 0
-            ? 'bg-green-900/30 border-green-600/40'
-            : myScore < 0
-              ? 'bg-red-900/30 border-red-600/40'
-              : 'bg-felt-700/60 border-gold-500/20'
-          }`}>
+          ${myScore > 0 ? 'bg-green-900/30 border-green-600/40'
+          : myScore < 0 ? 'bg-red-900/30 border-red-600/40'
+          : 'bg-felt-700/60 border-gold-500/20'}`}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-cream-400 uppercase tracking-widest mb-0.5">
@@ -255,32 +257,28 @@ export default function ContractPicker({ boardNumber, nsPair, ewPair, side, onSu
               </p>
               <p className={`font-display text-2xl font-bold
                 ${myScore > 0 ? 'text-green-400' : myScore < 0 ? 'text-red-400' : 'text-cream-400'}`}>
-                {myScore > 0 ? `+${myScore}` : myScore === 0 ? '0' : myScore}
+                {myScore > 0 ? `+${myScore}` : myScore}
               </p>
             </div>
-            {liveScore !== null && liveScore !== myScore && (
+            {liveNSScore !== null && liveNSScore !== myScore && (
               <div className="text-right">
-                <p className="text-xs text-cream-400 uppercase tracking-widest mb-0.5">
-                  NS score
-                </p>
+                <p className="text-xs text-cream-400 uppercase tracking-widest mb-0.5">NS</p>
                 <p className={`font-mono text-lg
-                  ${liveScore > 0 ? 'text-green-400' : liveScore < 0 ? 'text-red-400' : 'text-cream-400'}`}>
-                  {liveScore > 0 ? `+${liveScore}` : liveScore}
+                  ${liveNSScore > 0 ? 'text-green-400' : liveNSScore < 0 ? 'text-red-400' : 'text-cream-400'}`}>
+                  {liveNSScore > 0 ? `+${liveNSScore}` : liveNSScore}
                 </p>
               </div>
             )}
           </div>
-          {passedOut && (
-            <p className="text-amber-300 text-sm mt-1">
-              All four players passed — score is 0 for both sides.
-            </p>
-          )}
         </div>
       )}
 
       {/* Actions */}
-      <div className="flex gap-3 pt-1">
-        <button type="button" onClick={reset} className="btn-ghost text-sm">Clear</button>
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={reset}
+          className="btn-ghost text-sm px-4">
+          Clear
+        </button>
         <button type="button" onClick={handleSubmit} disabled={!ready || loading}
           className="btn-gold flex-1 text-center">
           {loading ? 'Saving…' : 'Save Result'}
