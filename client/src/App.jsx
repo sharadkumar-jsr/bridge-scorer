@@ -14,6 +14,7 @@ import PlayJoinPage           from './pages/PlayJoinPage.jsx';
 import PlayerDashboard        from './pages/PlayerDashboard.jsx';
 import PlayerResults          from './pages/PlayerResults.jsx';
 import TravellerPage          from './pages/TravellerPage.jsx';
+import PairResultsPage        from './pages/PairResultsPage.jsx';
 
 function PrivateRoute({ children }) {
   const { auth } = useAuth();
@@ -38,10 +39,11 @@ export default function App() {
         <Route path="/sessions/:id/full-results"  element={<PrivateRoute><DirectorResultsPage /></PrivateRoute>} />
 
         {/* Player routes */}
-        <Route path="/play/:token"           element={<PlayJoinPage />} />
-        <Route path="/play/:token/score"     element={<PlayerDashboard />} />
-        <Route path="/play/:token/results"   element={<PlayerResults />} />
-        <Route path="/play/:token/traveller" element={<TravellerPage />} />
+        <Route path="/play/:token"              element={<PlayJoinPage />} />
+        <Route path="/play/:token/score"        element={<PlayerDashboard />} />
+        <Route path="/play/:token/results"      element={<PlayerResults />} />
+        <Route path="/play/:token/traveller"    element={<TravellerPage />} />
+        <Route path="/play/:token/pair-results" element={<PairResultsPage />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
