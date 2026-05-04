@@ -5,9 +5,9 @@ import { usePlayer } from '../context/PlayerContext.jsx';
 import ContractPicker from '../components/ContractPicker.jsx';
 
 export default function PlayerDashboard() {
-  const { token }                          = useParams();
+  const { token }                             = useParams();
   const { player, playerFetch, leaveSession } = usePlayer();
-  const nav                                = useNavigate();
+  const nav                                   = useNavigate();
 
   const [boards,   setBoards]   = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -38,14 +38,11 @@ export default function PlayerDashboard() {
       if (!schedRes.ok) throw new Error(schedData.error);
       setBoards(Array.isArray(schedData) ? schedData : []);
       setReleased(sessData.results_released ?? false);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
   };
 
-  // Group ALL boards (including BYE) by round
+  // Group boards by round
   const roundMap = useMemo(() => {
     const map = {};
     for (const b of boards) {
@@ -55,9 +52,8 @@ export default function PlayerDashboard() {
     return map;
   }, [boards]);
 
-  const roundNums = Object.keys(roundMap).map(Number).sort((a, b) => a - b);
+  const roundNums = Object.keys(roundMap).map(Number).sort((a,b) => a-b);
 
-  // Open first round with un-entered real boards
   const [openRound, setOpenRound] = useState(null);
   useEffect(() => {
     if (roundNums.length && openRound === null) {
@@ -68,7 +64,6 @@ export default function PlayerDashboard() {
     }
   }, [roundNums.length]);
 
-  // Progress — only count real (non-bye) boards
   const realBoards    = boards.filter(b => !b.is_bye);
   const enteredBoards = realBoards.filter(b => b.entered_at).length;
   const totalBoards   = realBoards.length;
@@ -84,18 +79,38 @@ export default function PlayerDashboard() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Save failed');
+
+      // Store the returned nsScore so we can show points to this pair
       setBoards(prev => prev.map(b =>
         b.id === active.id
-          ? { ...b, ...contract, entered_at: new Date().toISOString(), canEnter: false }
+          ? {
+              ...b,
+              ...contract,
+              entered_at: new Date().toISOString(),
+              canEnter:   false,
+              ns_score:   data.nsScore ?? null,
+            }
           : b
       ));
       setActive(null);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   };
+
+  // Calculate the score from this pair's perspective
+  function myScore(board) {
+    if (board.ns_score == null) return null;
+    return board.side === 'NS' ? board.ns_score : -board.ns_score;
+  }
+
+  function contractLabel(board) {
+    if (!board.entered_at) return null;
+    if (board.level === 0) return 'Passed Out';
+    if (board.level == null) return null;
+    const dbl = board.doubled === 'doubled' ? 'X'
+              : board.doubled === 'redoubled' ? 'XX' : '';
+    return `${board.declarer}${board.level}${board.suit}${dbl} = ${board.tricks}`;
+  }
 
   const handleLeave = () => { leaveSession(); nav(`/play/${token}`); };
 
@@ -133,7 +148,7 @@ export default function PlayerDashboard() {
 
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
-        {/* Progress — only real boards count */}
+        {/* Progress */}
         <div className="card-felt relative p-4">
           <div className="flex justify-between text-sm mb-2">
             <span className="text-cream-400">Your boards</span>
@@ -151,7 +166,7 @@ export default function PlayerDashboard() {
           {released && (
             <button onClick={() => nav(`/play/${token}/results`)}
               className="btn-gold w-full mt-3 text-sm py-2">
-              🏆 View Final Results & Download PDF
+              🏆 View Final Results
             </button>
           )}
         </div>
@@ -164,22 +179,18 @@ export default function PlayerDashboard() {
 
         {/* Rounds */}
         {roundNums.map(rnd => {
-          const rndBoards  = roundMap[rnd] ?? [];
-
-          // Check if this round is a BYE round — all boards in this round are bye
-          const allBye = rndBoards.length > 0 && rndBoards.every(b => b.is_bye);
-
-          // Real boards only for this round
+          const rndBoards     = roundMap[rnd] ?? [];
+          const allBye        = rndBoards.length > 0 && rndBoards.every(b => b.is_bye);
           const realRndBoards = rndBoards.filter(b => !b.is_bye);
           const rndDone       = realRndBoards.length > 0 && realRndBoards.every(b => b.entered_at);
           const isOpen        = openRound === rnd;
           const first         = realRndBoards[0] ?? rndBoards[0];
 
-          // ── BYE Round ──────────────────────────────────────────
+          // BYE round
           if (allBye) {
             return (
-              <div key={rnd} className="card-felt relative overflow-hidden">
-                <div className="px-5 py-4 flex items-center justify-between opacity-60">
+              <div key={rnd} className="card-felt relative overflow-hidden opacity-60">
+                <div className="px-5 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="font-display text-lg text-cream-400">Round {rnd}</span>
                     <span className="text-xs bg-amber-900/40 text-amber-400 border border-amber-700/30
@@ -189,17 +200,15 @@ export default function PlayerDashboard() {
                   </div>
                   <span className="text-xs text-cream-400/60">Average score awarded</span>
                 </div>
-                <div className="px-5 pb-4 opacity-60">
+                <div className="px-5 pb-4">
                   <p className="text-xs text-cream-400/60">
-                    Your pair has a bye this round — no boards to play.
-                    An average score is awarded automatically by the system.
+                    Your pair has a bye this round. An average score is awarded automatically.
                   </p>
                 </div>
               </div>
             );
           }
 
-          // ── Normal Round ───────────────────────────────────────
           return (
             <div key={rnd} className="card-felt relative overflow-hidden">
               <button
@@ -211,7 +220,7 @@ export default function PlayerDashboard() {
                   {rndDone
                     ? <CheckCircle2 size={15} className="text-green-400" />
                     : <span className="text-xs text-cream-400/60">
-                        {realRndBoards.filter(b => b.entered_at).length}/{realRndBoards.length}
+                        {realRndBoards.filter(b=>b.entered_at).length}/{realRndBoards.length}
                       </span>
                   }
                 </div>
@@ -234,6 +243,8 @@ export default function PlayerDashboard() {
                     const isActive  = active?.id === board.id;
                     const isEntered = !!board.entered_at;
                     const canEnter  = board.canEnter;
+                    const label     = contractLabel(board);
+                    const score     = myScore(board);
 
                     return (
                       <div key={board.id}>
@@ -258,18 +269,35 @@ export default function PlayerDashboard() {
                             </div>
                           </div>
 
+                          {/* ── Score display after entry ── */}
                           <div className="text-right">
                             {isEntered ? (
-                              <span className="text-xs font-mono text-green-400">
-                                {board.level === 0
-                                  ? 'Passed Out'
-                                  : `${board.declarer}${board.level}${board.suit}${board.doubled !== 'none' ? (board.doubled === 'doubled' ? 'X' : 'XX') : ''} = ${board.tricks}`
-                                }
-                              </span>
+                              <div>
+                                <div className="text-xs font-mono text-cream-300">{label}</div>
+                                {score !== null && (
+                                  <div className={`text-sm font-bold font-mono
+                                    ${score > 0 ? 'text-green-400'
+                                    : score < 0 ? 'text-red-400'
+                                    : 'text-cream-400'}`}>
+                                    {score > 0 ? `+${score}` : score === 0 ? '0' : score}
+                                  </div>
+                                )}
+                              </div>
                             ) : canEnter ? (
                               <span className="text-xs text-cream-400/50">tap to enter</span>
                             ) : (
-                              <span className="text-xs text-amber-400/70">entered by opponents</span>
+                              <div>
+                                {label && <div className="text-xs font-mono text-cream-300">{label}</div>}
+                                {score !== null && (
+                                  <div className={`text-sm font-bold font-mono
+                                    ${score > 0 ? 'text-green-400'
+                                    : score < 0 ? 'text-red-400'
+                                    : 'text-cream-400'}`}>
+                                    {score > 0 ? `+${score}` : score === 0 ? '0' : score}
+                                  </div>
+                                )}
+                                {!label && <span className="text-xs text-amber-400/70">entered by opponents</span>}
+                              </div>
                             )}
                           </div>
                         </button>
@@ -288,17 +316,11 @@ export default function PlayerDashboard() {
                           </div>
                         )}
 
-                        {/* Score entered by opponents */}
-                        {!canEnter && isEntered && (
+                        {/* Locked by opponents */}
+                        {!canEnter && isEntered && !label && (
                           <div className="px-5 py-3 bg-felt-900/40 border-t border-gold-500/10">
-                            <p className="text-xs text-amber-400/80 flex items-center gap-1.5">
-                              🔒 Score entered by your opponents —
-                              <span className="font-mono text-cream-300">
-                                {board.level === 0
-                                  ? 'Passed Out'
-                                  : `${board.declarer}${board.level}${board.suit}${board.doubled !== 'none' ? (board.doubled === 'doubled' ? 'X' : 'XX') : ''} = ${board.tricks}`
-                                }
-                              </span>
+                            <p className="text-xs text-amber-400/80">
+                              🔒 Score entered by your opponents
                             </p>
                           </div>
                         )}
