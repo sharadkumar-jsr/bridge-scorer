@@ -85,7 +85,7 @@ router.get('/schedule', requirePlayerAuth, async (req, res) => {
     const { rows } = await db.query(
       `SELECT br.id, br.round, br.table_number, br.board_number,
               br.ns_pair, br.ew_pair, br.is_bye,
-              br.declarer, br.level, br.suit, br.doubled, br.tricks, br.entered_at,
+              br.declarer, br.level, br.suit, br.doubled, br.tricks, br.ns_score, br.entered_at,
               ns.player1_name AS ns_p1, ns.player2_name AS ns_p2,
               ew.player1_name AS ew_p1, ew.player2_name AS ew_p2
        FROM board_results br
