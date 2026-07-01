@@ -13,6 +13,11 @@ function vulText(b) {
   if (v==='none') return 'None'; if (v==='ns') return 'NS Vul';
   if (v==='ew')   return 'EW Vul'; return 'Both Vul';
 }
+function vulLabel(b) {
+  const v = VUL_CYCLE[(b-1)%16];
+  if (v==='none') return 'NV'; if (v==='ns') return 'NS';
+  if (v==='ew')   return 'EW'; return 'Both';
+}
 
 function contractStr(r) {
   if (!r || r.level==null) return '—';
@@ -108,6 +113,47 @@ export default function DirectorResultsPage() {
 
   const tdS = {background:'white',color:'black',padding:'4px 8px',fontSize:'11px',borderBottom:'1px solid #ddd'};
   const thS = {background:'#0b2a1a',color:'#c9a03c',padding:'5px 8px',fontSize:'11px',fontWeight:'bold'};
+  const subTh = {background:'#e8e8e0',color:'#333',padding:'3px 7px',fontSize:'9px',fontWeight:'bold',textAlign:'center',borderBottom:'1px solid #ccc'};
+  const subTd = {background:'#fafaf5',color:'black',padding:'3px 7px',fontSize:'9px',borderBottom:'1px solid #f0f0e8',textAlign:'center'};
+
+  // ── Pair-wise scorecards (print only) — same math/format as PairResultsPage ──
+  const pairCards = useMemo(() => {
+    const rankMap = {}, pctMap = {};
+    for (const s of standings) { rankMap[s.pairNumber] = s.rank; pctMap[s.pairNumber] = s.percentage; }
+
+    const boardMPMap = {};
+    for (const board of boards) boardMPMap[board.boardNumber] = calcMP(board.results);
+
+    const pvp = {};
+    const ensure = (a,b) => {
+      if (!pvp[a]) pvp[a] = {};
+      if (!pvp[a][b]) pvp[a][b] = { boards:[], totalMP:0, maxMP:0, totalScore:0 };
+    };
+
+    for (const board of boards) {
+      for (const r of board.results) {
+        if (r.is_bye || r.ns_score == null) continue;
+        const ns = r.ns_pair, ew = r.ew_pair, key = `${ns}-${ew}`;
+        const mp = boardMPMap[board.boardNumber]?.[key];
+        if (!mp) continue;
+
+        ensure(ns, ew);
+        pvp[ns][ew].boards.push({ boardNum:board.boardNumber, side:'NS', contract:contractStr(r), tricks:r.tricks, score:r.ns_score, mp:mp.nsMP, maxMP:mp.maxMP });
+        pvp[ns][ew].totalMP += mp.nsMP; pvp[ns][ew].maxMP += mp.maxMP; pvp[ns][ew].totalScore += r.ns_score;
+
+        ensure(ew, ns);
+        pvp[ew][ns].boards.push({ boardNum:board.boardNumber, side:'EW', contract:contractStr(r), tricks:r.tricks, score:-r.ns_score, mp:mp.ewMP, maxMP:mp.maxMP });
+        pvp[ew][ns].totalMP += mp.ewMP; pvp[ew][ns].maxMP += mp.maxMP; pvp[ew][ns].totalScore += -r.ns_score;
+      }
+    }
+
+    for (const p of Object.keys(pvp))
+      for (const opp of Object.keys(pvp[p]))
+        pvp[p][opp].boards.sort((a,b) => a.boardNum - b.boardNum);
+
+    const realPairs = Object.keys(pvp).map(Number).sort((a,b) => a-b);
+    return { pvp, realPairs, rankMap, pctMap };
+  }, [boards, standings]);
 
   if (loading) return (
     <div className="min-h-screen bg-felt-gradient flex items-center justify-center">
@@ -125,6 +171,7 @@ export default function DirectorResultsPage() {
           .dr-print{display:block!important;}
           .dr-footer{display:block!important;}
           .board-block{page-break-inside:avoid;margin-bottom:14px;border:1px solid #bbb;border-radius:4px;overflow:hidden;}
+          .pair-block{page-break-inside:avoid;}
           .board-hdr{background:#0b2a1a!important;color:#c9a03c!important;padding:5px 10px;display:flex;justify-content:space-between;font-size:11px;font-weight:bold;}
           .b-tbl{width:100%;border-collapse:collapse;font-size:10px;}
           .b-th{background:#e8e8e0!important;color:#333!important;padding:3px 7px;border-bottom:1px solid #ccc;}
@@ -238,6 +285,79 @@ export default function DirectorResultsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          );
+        })}
+
+        {/* Pair-wise scorecards */}
+        {pairCards.realPairs.length > 0 && (
+          <h2 style={{fontSize:'14px',color:'#0b2a1a',borderBottom:'2px solid #c9a03c',
+            paddingBottom:'3px',margin:'20px 0 8px',pageBreakBefore:'always'}}>
+            Pair-wise Scorecards
+          </h2>
+        )}
+        {pairCards.realPairs.map(p=>{
+          const opponents=Object.keys(pairCards.pvp[p]??{}).map(Number).sort((a,b)=>a-b);
+          if(!opponents.length) return null;
+          return (
+            <div key={p} className="pair-block"
+              style={{border:'1px solid #ccc',borderRadius:'4px',overflow:'hidden',marginBottom:'16px'}}>
+              <div style={{background:'#0b2a1a',color:'#c9a03c',padding:'6px 10px',display:'flex',
+                justifyContent:'space-between',fontSize:'12px',fontWeight:'bold'}}>
+                <span>Pair {p} — {getPairName(p)}</span>
+                <span>Rank #{pairCards.rankMap[p]??'—'} · {pairCards.pctMap[p]??'—'}%</span>
+              </div>
+              {opponents.map(opp=>{
+                const res=pairCards.pvp[p][opp];
+                const pct=res.maxMP>0?((res.totalMP/res.maxMP)*100).toFixed(0):'—';
+                const scoreColor=res.totalScore>0?'#1a7a3a':res.totalScore<0?'#cc3333':'#555';
+                return (
+                  <div key={opp} style={{borderTop:'1px solid #ddd'}}>
+                    <div style={{background:'#f0f0e8',padding:'4px 10px',display:'flex',
+                      justifyContent:'space-between',fontSize:'10px',fontWeight:'bold'}}>
+                      <span>vs Pair {opp} — {getPairName(opp)}</span>
+                      <span style={{color:scoreColor}}>
+                        Net: {res.totalScore>0?`+${res.totalScore}`:res.totalScore} · MP: {res.totalMP}/{res.maxMP} · {pct}%
+                      </span>
+                    </div>
+                    <table style={{width:'100%',borderCollapse:'collapse'}}>
+                      <thead>
+                        <tr>
+                          <th style={subTh}>Board</th>
+                          <th style={subTh}>Vul</th>
+                          <th style={subTh}>Side</th>
+                          <th style={subTh}>Contract</th>
+                          <th style={subTh}>Tricks</th>
+                          <th style={subTh}>Score</th>
+                          <th style={subTh}>MP</th>
+                          <th style={subTh}>Max</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {res.boards.map((b,i)=>{
+                          const sc=b.score;
+                          const scColor=sc>0?'#1a7a3a':sc<0?'#cc3333':'#555';
+                          const bg=i%2===0?'#fafaf5':'white';
+                          return (
+                            <tr key={b.boardNum}>
+                              <td style={{...subTd,background:bg}}>{b.boardNum}</td>
+                              <td style={{...subTd,background:bg}}>{vulLabel(b.boardNum)}</td>
+                              <td style={{...subTd,background:bg}}>{b.side}</td>
+                              <td style={{...subTd,background:bg,fontFamily:'monospace'}}>{b.contract}={b.tricks}</td>
+                              <td style={{...subTd,background:bg}}>{b.tricks}</td>
+                              <td style={{...subTd,background:bg,fontWeight:'bold',color:scColor}}>
+                                {sc>0?`+${sc}`:sc}
+                              </td>
+                              <td style={{...subTd,background:bg,fontWeight:'bold'}}>{b.mp}</td>
+                              <td style={{...subTd,background:bg}}>{b.maxMP}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
             </div>
           );
         })}
@@ -404,8 +524,11 @@ export default function DirectorResultsPage() {
 
           <button onClick={()=>window.print()}
             className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
-            <Printer size={16}/> Print Full Results + Travellers
+            <Printer size={16}/> Print All — Standings + Travellers + Pair Cards
           </button>
+          <p className="text-center text-cream-400/50 text-xs pb-2">
+            One print includes final standings, board travellers, and every pair's scorecard
+          </p>
         </main>
       </div>
     </>
