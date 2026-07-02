@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, CheckCircle2, Trophy, LogOut, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, CheckCircle2, Trophy, LogOut, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext.jsx';
 import ContractPicker from '../components/ContractPicker.jsx';
 
@@ -15,6 +15,39 @@ export default function PlayerDashboard() {
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState('');
   const [released, setReleased] = useState(false);
+
+  // ── Live per-board traveller (only for boards this pair has completed) ──
+  const [travOpen,    setTravOpen]    = useState(null);   // board_number currently open
+  const [travData,    setTravData]    = useState(null);   // { boardNumber, results, playedCount }
+  const [travLoading, setTravLoading] = useState(false);
+  const [travError,   setTravError]   = useState('');
+
+  const loadTraveller = async (boardNumber) => {
+    setTravError('');
+    try {
+      const res  = await playerFetch(`/api/play/${token}/boards/${boardNumber}/traveller`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Could not load traveller');
+      setTravData(data);
+    } catch (e) { setTravError(e.message); setTravData(null); }
+  };
+
+  const toggleTraveller = async (boardNumber) => {
+    if (travOpen === boardNumber) { setTravOpen(null); setTravData(null); setTravError(''); return; }
+    setTravOpen(boardNumber);
+    setTravData(null);
+    setTravError('');
+    setTravLoading(true);
+    await loadTraveller(boardNumber);
+    setTravLoading(false);
+  };
+
+  // Keep the open traveller live — re-fetch (server re-checks eligibility every time)
+  useEffect(() => {
+    if (travOpen == null) return;
+    const t = setInterval(() => loadTraveller(travOpen), 12_000);
+    return () => clearInterval(t);
+  }, [travOpen]);
 
   useEffect(() => {
     if (!player) nav(`/play/${token}`, { replace: true });
@@ -324,6 +357,33 @@ export default function PlayerDashboard() {
                             </p>
                           </div>
                         )}
+
+                        {/* Live traveller — only for boards this pair has completed */}
+                        {isEntered && (
+                          <div className="px-5 py-3 bg-felt-900/30 border-t border-gold-500/10">
+                            <button
+                              onClick={() => toggleTraveller(board.board_number)}
+                              className="flex items-center gap-1.5 text-xs text-gold-300 hover:text-gold-200 transition-colors"
+                            >
+                              <BarChart3 size={13} />
+                              {travOpen === board.board_number ? 'Hide traveller' : 'View traveller'}
+                            </button>
+
+                            {travOpen === board.board_number && (
+                              <div className="mt-2.5">
+                                {travLoading && !travData ? (
+                                  <div className="py-3 flex justify-center">
+                                    <Loader2 size={16} className="animate-spin text-gold-400" />
+                                  </div>
+                                ) : travError ? (
+                                  <p className="text-xs text-red-400 py-1.5">{travError}</p>
+                                ) : travData ? (
+                                  <TravellerTable data={travData} myPair={player?.pairNumber} />
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -333,6 +393,65 @@ export default function PlayerDashboard() {
           );
         })}
       </main>
+    </div>
+  );
+}
+
+// ── Live board traveller table (player-facing) ──────────────────
+function travContract(r) {
+  if (r.level == null) return '—';
+  if (r.level === 0)   return 'Passed';
+  const dbl = r.doubled === 'doubled' ? 'X' : r.doubled === 'redoubled' ? 'XX' : '';
+  return `${r.declarer}${r.level}${r.suit}${dbl}`;
+}
+
+function TravellerTable({ data, myPair }) {
+  const rows = data?.results ?? [];
+  if (!rows.length) {
+    return <p className="text-xs text-cream-400/60 py-1.5">No scores entered for this board yet.</p>;
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gold-500/15">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-felt-900/60 text-cream-400">
+            <th className="px-2 py-1.5 text-left">NS</th>
+            <th className="px-2 py-1.5 text-left">EW</th>
+            <th className="px-2 py-1.5 text-center">Contract</th>
+            <th className="px-2 py-1.5 text-center">Tr</th>
+            <th className="px-2 py-1.5 text-right">Score</th>
+            <th className="px-2 py-1.5 text-center">NS MP</th>
+            <th className="px-2 py-1.5 text-center">EW MP</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gold-500/10">
+          {rows.map((r, i) => {
+            const mine = r.nsPair === myPair || r.ewPair === myPair;
+            const sc   = r.nsScore;
+            return (
+              <tr key={i} className={mine ? 'bg-gold-400/10' : ''}>
+                <td className={`px-2 py-1.5 ${r.nsPair === myPair ? 'text-gold-300 font-semibold' : 'text-cream-200'}`}>
+                  {r.nsNames}
+                </td>
+                <td className={`px-2 py-1.5 ${r.ewPair === myPair ? 'text-gold-300 font-semibold' : 'text-cream-200'}`}>
+                  {r.ewNames}
+                </td>
+                <td className="px-2 py-1.5 text-center font-mono text-cream-200">{travContract(r)}</td>
+                <td className="px-2 py-1.5 text-center font-mono text-cream-300">{r.tricks ?? '—'}</td>
+                <td className={`px-2 py-1.5 text-right font-mono font-bold
+                  ${sc > 0 ? 'text-green-400' : sc < 0 ? 'text-red-400' : 'text-cream-400'}`}>
+                  {sc != null ? (sc > 0 ? `+${sc}` : sc) : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-center font-mono text-cream-300">{r.nsMP ?? '—'}</td>
+                <td className="px-2 py-1.5 text-center font-mono text-cream-300">{r.ewMP ?? '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="px-2 py-1.5 text-[11px] text-cream-400/60 bg-felt-900/40">
+        {data.playedCount} {data.playedCount === 1 ? 'result' : 'results'} so far · updates live · your row highlighted
+      </div>
     </div>
   );
 }
