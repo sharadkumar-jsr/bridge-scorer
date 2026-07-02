@@ -231,6 +231,89 @@ router.get('/myresults', requirePlayerAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// ── GET /api/play/:token/boards/:boardNumber/traveller ────────
+// LIVE per-board traveller during play.
+// A pair may view a board's traveller ONLY after they have themselves
+// played and entered that board. This is enforced HERE, server-side,
+// via the entered_at check — the client is never trusted to self-limit.
+// No results_released gate: this is the mid-session, per-board view.
+router.get('/boards/:boardNumber/traveller', requirePlayerAuth, async (req, res) => {
+  const boardNumber = Number(req.params.boardNumber);
+  if (!Number.isInteger(boardNumber)) {
+    return res.status(400).json({ error: 'Invalid board number' });
+  }
+
+  try {
+    const { rows: sess } = await db.query(
+      `SELECT status FROM sessions WHERE id = $1`, [req.player.sessionId]
+    );
+    if (!sess[0]) return res.status(404).json({ error: 'Session not found' });
+
+    // ── Eligibility gate: has THIS pair actually played + entered this board? ──
+    const { rows: eligible } = await db.query(
+      `SELECT 1 FROM board_results
+       WHERE session_id = $1 AND board_number = $2
+         AND (ns_pair = $3 OR ew_pair = $3)
+         AND is_bye = FALSE AND entered_at IS NOT NULL
+       LIMIT 1`,
+      [req.player.sessionId, boardNumber, req.player.pairNumber]
+    );
+    if (!eligible[0]) {
+      return res.status(403).json({
+        error: 'You can view this board only after you have played and entered it.',
+        notYetPlayed: true,
+      });
+    }
+
+    // ── All entered (non-bye) results for THIS ONE board ──
+    const { rows: resultRows } = await db.query(
+      `SELECT br.ns_pair, br.ew_pair,
+              br.declarer, br.level, br.suit, br.doubled,
+              br.tricks, br.ns_score,
+              ns.player1_name AS ns_p1, ns.player2_name AS ns_p2,
+              ew.player1_name AS ew_p1, ew.player2_name AS ew_p2
+       FROM board_results br
+       LEFT JOIN session_pairs ns ON ns.session_id = br.session_id AND ns.pair_number = br.ns_pair
+       LEFT JOIN session_pairs ew ON ew.session_id = br.session_id AND ew.pair_number = br.ew_pair
+       WHERE br.session_id = $1 AND br.board_number = $2
+         AND br.is_bye = FALSE AND br.entered_at IS NOT NULL
+       ORDER BY br.ns_score DESC NULLS LAST`,
+      [req.player.sessionId, boardNumber]
+    );
+
+    // Matchpoint the field (byes don't affect played pairs' MP, so omitting them is exact)
+    const mpMap = calculateMatchpoints(
+      resultRows.map(r => ({
+        pairNS: r.ns_pair, pairEW: r.ew_pair,
+        nsScore: r.ns_score ?? 0, isBye: false,
+      }))
+    );
+
+    const me = req.player.pairNumber;
+    const results = resultRows.map(r => ({
+      nsPair:   r.ns_pair,
+      ewPair:   r.ew_pair,
+      nsNames:  [r.ns_p1, r.ns_p2].filter(Boolean).join(' / ') || `Pair ${r.ns_pair}`,
+      ewNames:  [r.ew_p1, r.ew_p2].filter(Boolean).join(' / ') || `Pair ${r.ew_pair}`,
+      declarer: r.declarer,
+      level:    r.level,
+      suit:     r.suit,
+      doubled:  r.doubled,
+      tricks:   r.tricks,
+      nsScore:  r.ns_score,
+      nsMP:     mpMap[r.ns_pair]?.mp    ?? null,
+      ewMP:     mpMap[r.ew_pair]?.mp    ?? null,
+      maxMP:    mpMap[r.ns_pair]?.maxMp ?? mpMap[r.ew_pair]?.maxMp ?? null,
+      isMine:   r.ns_pair === me || r.ew_pair === me,
+    }));
+
+    res.json({ boardNumber, playedCount: results.length, results });
+  } catch (err) {
+    console.error('[play] board traveller error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ── Helpers ───────────────────────────────────────────────────
 async function liveBoardMatchpoints(sessionId, boardNumber) {
   const { rows } = await db.query(
