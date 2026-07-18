@@ -8,6 +8,7 @@ const HOWELL_INFO = {
   4: { pairs: '7 or 8',   rounds: 7,  boards: 21 },
   5: { pairs: '9 or 10',  rounds: 9,  boards: 18 },
   6: { pairs: '11 or 12', rounds: 11, boards: 22 },
+  7: { pairs: '13 or 14', rounds: 13, boards: 26 },
 };
 
 export default function NewSessionPage() {
@@ -131,7 +132,7 @@ export default function NewSessionPage() {
                 <>
                   {/* Table selector buttons */}
                   <div className="flex gap-3">
-                    {[3, 4, 5, 6].map(t => (
+                    {[3, 4, 5, 6, 7].map(t => (
                       <button key={t} type="button" onClick={() => setTables(t)}
                         className={`flex-1 rounded-xl border py-3 transition-all
                           ${tables === t
