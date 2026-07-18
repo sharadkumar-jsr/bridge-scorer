@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft, Printer, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, ArrowLeft, Printer, FileDown, ChevronDown, ChevronUp } from 'lucide-react';
 import Navbar from '../components/Navbar.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -49,7 +49,7 @@ const MEDAL={1:'🥇',2:'🥈',3:'🥉'};
 
 export default function DirectorResultsPage() {
   const { id }       = useParams();
-  const { apiFetch } = useAuth();
+  const { apiFetch, auth } = useAuth();
   const nav          = useNavigate();
 
   const [session,   setSession]   = useState(null);
@@ -63,23 +63,42 @@ export default function DirectorResultsPage() {
 
   useEffect(() => { loadAll(); }, [id]);
 
+  // Fetch with one automatic retry — shields against transient
+  // Supabase pooler drops / Render cold starts
+  const fetchJson = async (url, label) => {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res  = await apiFetch(url);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) return data;
+        if (attempt === 2)
+          throw new Error(`${label} failed (${res.status}): ${data.error ?? 'Server error'}`);
+      } catch (e) {
+        if (attempt === 2) throw e instanceof Error ? e : new Error(`${label} failed`);
+      }
+      await new Promise(r => setTimeout(r, 800)); // brief pause before retry
+    }
+  };
+
   const loadAll = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const [sessRes, resultsRes, scoresRes] = await Promise.all([
-        apiFetch(`/api/sessions/${id}`),
-        apiFetch(`/api/sessions/${id}/results`),
-        apiFetch(`/api/sessions/${id}/results/scores`),
-      ]);
       const [sessData, resultsData, scoresData] = await Promise.all([
-        sessRes.json(), resultsRes.json(), scoresRes.json(),
+        fetchJson(`/api/sessions/${id}`,                'Session details'),
+        fetchJson(`/api/sessions/${id}/results`,        'Board results'),
+        fetchJson(`/api/sessions/${id}/results/scores`, 'Standings'),
       ]);
-      if (!sessRes.ok) throw new Error(sessData.error);
+
+      if (!Array.isArray(resultsData)) throw new Error('Board results: unexpected response');
+      if (!Array.isArray(scoresData))  throw new Error('Standings: unexpected response');
+
       setSession(sessData);
       setStandings(scoresData);
 
-      // Build pair lookup
+      // Build pair lookup (guard against [null] from empty json_agg)
       const pairLookup={};
-      (sessData.pairs??[]).forEach(p=>{pairLookup[p.pair_number]=p;});
+      (sessData.pairs??[]).forEach(p=>{ if(p) pairLookup[p.pair_number]=p; });
       setPairs(pairLookup);
 
       // Group results by board number
@@ -103,6 +122,13 @@ export default function DirectorResultsPage() {
     const names=[p.player1_name,p.player2_name].filter(Boolean);
     return names.length?names.join(' / '):`Pair ${num}`;
   }
+
+  // Server-generated PDF — reliable on iPhone/iPad where window.print() is flaky.
+  // Token goes via ?t= because the Vercel proxy strips Authorization headers.
+  const downloadPdf = () => {
+    if (!auth?.accessToken) return;
+    window.open(`/api/sessions/${id}/pdf?t=${encodeURIComponent(auth.accessToken)}`, '_blank');
+  };
 
   function pctColour(pct) {
     const n=parseFloat(pct);
@@ -379,15 +405,28 @@ export default function DirectorResultsPage() {
             <span className="font-display text-gold-300 text-base flex-1 truncate">
               Full Results — {session?.name}
             </span>
-            <button onClick={()=>window.print()}
+            <button onClick={downloadPdf}
               className="flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3">
+              <FileDown size={14}/> PDF
+            </button>
+            <button onClick={()=>window.print()}
+              className="hidden sm:flex items-center gap-1.5 text-sm btn-gold py-1.5 px-3">
               <Printer size={14}/> Print
             </button>
           </div>
         </header>
 
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-          {error && <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-3 rounded-lg">{error}</div>}
+          {error && (
+            <div className="bg-red-900/40 border border-red-700/50 text-red-300 text-sm px-4 py-3 rounded-lg
+                            flex items-center justify-between gap-3">
+              <span>⚠️ {error} — detailed scores may be incomplete.</span>
+              <button onClick={loadAll}
+                className="shrink-0 border border-red-400/50 hover:bg-red-400/10 rounded-md px-3 py-1 text-xs font-semibold">
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* Tabs */}
           <div className="dr-tabs flex gap-2">
@@ -522,12 +561,19 @@ export default function DirectorResultsPage() {
             );
           })}
 
+          <button onClick={downloadPdf}
+            className="btn-gold w-full flex items-center justify-center gap-2 py-3">
+            <FileDown size={16}/> Download PDF — Standings + All Board Results
+          </button>
+          <p className="text-center text-cream-400/50 text-xs">
+            Recommended on iPhone/iPad — opens a PDF you can share, save, or AirPrint
+          </p>
           <button onClick={()=>window.print()}
             className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
-            <Printer size={16}/> Print All — Standings + Travellers + Pair Cards
+            <Printer size={16}/> Browser Print — Standings + Travellers + Pair Cards
           </button>
           <p className="text-center text-cream-400/50 text-xs pb-2">
-            One print includes final standings, board travellers, and every pair's scorecard
+            Best on a computer — includes every pair's individual scorecard
           </p>
         </main>
       </div>
