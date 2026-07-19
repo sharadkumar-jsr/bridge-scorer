@@ -142,92 +142,92 @@ const HOWELL_5TABLE = [
 // ─────────────────────────────────────────────────────────────
 const HOWELL_6TABLE = [
   // ── ROUND 1 ──────────────────────────────────────
-  { round:1, table:1, nsPair:9,  ewPair:11, boards:[11,12] },
-  { round:1, table:2, nsPair:7,  ewPair:4,  boards:[13,14] },
-  { round:1, table:3, nsPair:8,  ewPair:2,  boards:[17,18] },
-  { round:1, table:4, nsPair:5,  ewPair:6,  boards:[19,20] },
-  { round:1, table:5, nsPair:12, ewPair:1,  boards:[21,22] }, // phantom NS
-  { round:1, table:6, nsPair:10, ewPair:3,  boards:[1,2]   },
+  { round:1, table:1, nsPair:9,  ewPair:11, boards:[16,17,18] },
+  { round:1, table:2, nsPair:7,  ewPair:4,  boards:[19,20,21] },
+  { round:1, table:3, nsPair:8,  ewPair:2,  boards:[25,26,27] },
+  { round:1, table:4, nsPair:5,  ewPair:6,  boards:[28,29,30] },
+  { round:1, table:5, nsPair:12, ewPair:1,  boards:[31,32,33] }, // phantom NS
+  { round:1, table:6, nsPair:10, ewPair:3,  boards:[1,2,3]   },
 
   // ── ROUND 2 ──────────────────────────────────────
-  { round:2, table:1, nsPair:10, ewPair:1,  boards:[13,14] },
-  { round:2, table:2, nsPair:8,  ewPair:5,  boards:[15,16] },
-  { round:2, table:3, nsPair:9,  ewPair:3,  boards:[19,20] },
-  { round:2, table:4, nsPair:6,  ewPair:7,  boards:[21,22] },
-  { round:2, table:5, nsPair:12, ewPair:2,  boards:[1,2]   }, // phantom NS
-  { round:2, table:6, nsPair:11, ewPair:4,  boards:[3,4]   },
+  { round:2, table:1, nsPair:10, ewPair:1,  boards:[19,20,21] },
+  { round:2, table:2, nsPair:8,  ewPair:5,  boards:[22,23,24] },
+  { round:2, table:3, nsPair:9,  ewPair:3,  boards:[28,29,30] },
+  { round:2, table:4, nsPair:6,  ewPair:7,  boards:[31,32,33] },
+  { round:2, table:5, nsPair:12, ewPair:2,  boards:[1,2,3]   }, // phantom NS
+  { round:2, table:6, nsPair:11, ewPair:4,  boards:[4,5,6]   },
 
   // ── ROUND 3 ──────────────────────────────────────
-  { round:3, table:1, nsPair:11, ewPair:2,  boards:[15,16] },
-  { round:3, table:2, nsPair:9,  ewPair:6,  boards:[17,18] },
-  { round:3, table:3, nsPair:10, ewPair:4,  boards:[21,22] },
-  { round:3, table:4, nsPair:7,  ewPair:8,  boards:[1,2]   },
-  { round:3, table:5, nsPair:12, ewPair:3,  boards:[3,4]   }, // phantom NS
-  { round:3, table:6, nsPair:1,  ewPair:5,  boards:[5,6]   },
+  { round:3, table:1, nsPair:11, ewPair:2,  boards:[22,23,24] },
+  { round:3, table:2, nsPair:9,  ewPair:6,  boards:[25,26,27] },
+  { round:3, table:3, nsPair:10, ewPair:4,  boards:[31,32,33] },
+  { round:3, table:4, nsPair:7,  ewPair:8,  boards:[1,2,3]   },
+  { round:3, table:5, nsPair:12, ewPair:3,  boards:[4,5,6]   }, // phantom NS
+  { round:3, table:6, nsPair:1,  ewPair:5,  boards:[7,8,9]   },
 
   // ── ROUND 4 ──────────────────────────────────────
-  { round:4, table:1, nsPair:1,  ewPair:3,  boards:[17,18] },
-  { round:4, table:2, nsPair:10, ewPair:7,  boards:[19,20] },
-  { round:4, table:3, nsPair:11, ewPair:5,  boards:[1,2]   },
-  { round:4, table:4, nsPair:8,  ewPair:9,  boards:[3,4]   },
-  { round:4, table:5, nsPair:12, ewPair:4,  boards:[5,6]   }, // phantom NS
-  { round:4, table:6, nsPair:2,  ewPair:6,  boards:[7,8]   },
+  { round:4, table:1, nsPair:1,  ewPair:3,  boards:[25,26,27] },
+  { round:4, table:2, nsPair:10, ewPair:7,  boards:[28,29,30] },
+  { round:4, table:3, nsPair:11, ewPair:5,  boards:[1,2,3]   },
+  { round:4, table:4, nsPair:8,  ewPair:9,  boards:[4,5,6]   },
+  { round:4, table:5, nsPair:12, ewPair:4,  boards:[7,8,9]   }, // phantom NS
+  { round:4, table:6, nsPair:2,  ewPair:6,  boards:[10,11,12]   },
 
   // ── ROUND 5 ──────────────────────────────────────
-  { round:5, table:1, nsPair:2,  ewPair:4,  boards:[19,20] },
-  { round:5, table:2, nsPair:11, ewPair:8,  boards:[21,22] },
-  { round:5, table:3, nsPair:1,  ewPair:6,  boards:[3,4]   },
-  { round:5, table:4, nsPair:9,  ewPair:10, boards:[5,6]   },
-  { round:5, table:5, nsPair:12, ewPair:5,  boards:[7,8]   }, // phantom NS
-  { round:5, table:6, nsPair:3,  ewPair:7,  boards:[9,10]  },
+  { round:5, table:1, nsPair:2,  ewPair:4,  boards:[28,29,30] },
+  { round:5, table:2, nsPair:11, ewPair:8,  boards:[31,32,33] },
+  { round:5, table:3, nsPair:1,  ewPair:6,  boards:[4,5,6]   },
+  { round:5, table:4, nsPair:9,  ewPair:10, boards:[7,8,9]   },
+  { round:5, table:5, nsPair:12, ewPair:5,  boards:[10,11,12]   }, // phantom NS
+  { round:5, table:6, nsPair:3,  ewPair:7,  boards:[13,14,15]  },
 
   // ── ROUND 6 ──────────────────────────────────────
-  { round:6, table:1, nsPair:3,  ewPair:5,  boards:[21,22] },
-  { round:6, table:2, nsPair:1,  ewPair:9,  boards:[1,2]   },
-  { round:6, table:3, nsPair:2,  ewPair:7,  boards:[5,6]   },
-  { round:6, table:4, nsPair:10, ewPair:11, boards:[7,8]   },
-  { round:6, table:5, nsPair:12, ewPair:6,  boards:[9,10]  }, // phantom NS
-  { round:6, table:6, nsPair:4,  ewPair:8,  boards:[11,12] },
+  { round:6, table:1, nsPair:3,  ewPair:5,  boards:[31,32,33] },
+  { round:6, table:2, nsPair:1,  ewPair:9,  boards:[1,2,3]   },
+  { round:6, table:3, nsPair:2,  ewPair:7,  boards:[7,8,9]   },
+  { round:6, table:4, nsPair:10, ewPair:11, boards:[10,11,12]   },
+  { round:6, table:5, nsPair:12, ewPair:6,  boards:[13,14,15]  }, // phantom NS
+  { round:6, table:6, nsPair:4,  ewPair:8,  boards:[16,17,18] },
 
   // ── ROUND 7 ──────────────────────────────────────
-  { round:7, table:1, nsPair:4,  ewPair:6,  boards:[1,2]   },
-  { round:7, table:2, nsPair:2,  ewPair:10, boards:[3,4]   },
-  { round:7, table:3, nsPair:3,  ewPair:8,  boards:[7,8]   },
-  { round:7, table:4, nsPair:11, ewPair:1,  boards:[9,10]  },
-  { round:7, table:5, nsPair:12, ewPair:7,  boards:[11,12] }, // phantom NS
-  { round:7, table:6, nsPair:5,  ewPair:9,  boards:[13,14] },
+  { round:7, table:1, nsPair:4,  ewPair:6,  boards:[1,2,3]   },
+  { round:7, table:2, nsPair:2,  ewPair:10, boards:[4,5,6]   },
+  { round:7, table:3, nsPair:3,  ewPair:8,  boards:[10,11,12]   },
+  { round:7, table:4, nsPair:11, ewPair:1,  boards:[13,14,15]  },
+  { round:7, table:5, nsPair:12, ewPair:7,  boards:[16,17,18] }, // phantom NS
+  { round:7, table:6, nsPair:5,  ewPair:9,  boards:[19,20,21] },
 
   // ── ROUND 8 ──────────────────────────────────────
-  { round:8, table:1, nsPair:5,  ewPair:7,  boards:[3,4]   },
-  { round:8, table:2, nsPair:3,  ewPair:11, boards:[5,6]   },
-  { round:8, table:3, nsPair:4,  ewPair:9,  boards:[9,10]  },
-  { round:8, table:4, nsPair:1,  ewPair:2,  boards:[11,12] },
-  { round:8, table:5, nsPair:12, ewPair:8,  boards:[13,14] }, // phantom NS
-  { round:8, table:6, nsPair:6,  ewPair:10, boards:[15,16] },
+  { round:8, table:1, nsPair:5,  ewPair:7,  boards:[4,5,6]   },
+  { round:8, table:2, nsPair:3,  ewPair:11, boards:[7,8,9]   },
+  { round:8, table:3, nsPair:4,  ewPair:9,  boards:[13,14,15]  },
+  { round:8, table:4, nsPair:1,  ewPair:2,  boards:[16,17,18] },
+  { round:8, table:5, nsPair:12, ewPair:8,  boards:[19,20,21] }, // phantom NS
+  { round:8, table:6, nsPair:6,  ewPair:10, boards:[22,23,24] },
 
   // ── ROUND 9 ──────────────────────────────────────
-  { round:9, table:1, nsPair:6,  ewPair:8,  boards:[5,6]   },
-  { round:9, table:2, nsPair:4,  ewPair:1,  boards:[7,8]   },
-  { round:9, table:3, nsPair:5,  ewPair:10, boards:[11,12] },
-  { round:9, table:4, nsPair:2,  ewPair:3,  boards:[13,14] },
-  { round:9, table:5, nsPair:12, ewPair:9,  boards:[15,16] }, // phantom NS
-  { round:9, table:6, nsPair:7,  ewPair:11, boards:[17,18] },
+  { round:9, table:1, nsPair:6,  ewPair:8,  boards:[7,8,9]   },
+  { round:9, table:2, nsPair:4,  ewPair:1,  boards:[10,11,12]   },
+  { round:9, table:3, nsPair:5,  ewPair:10, boards:[16,17,18] },
+  { round:9, table:4, nsPair:2,  ewPair:3,  boards:[19,20,21] },
+  { round:9, table:5, nsPair:12, ewPair:9,  boards:[22,23,24] }, // phantom NS
+  { round:9, table:6, nsPair:7,  ewPair:11, boards:[25,26,27] },
 
   // ── ROUND 10 ─────────────────────────────────────
-  { round:10, table:1, nsPair:7,  ewPair:9,  boards:[7,8]   },
-  { round:10, table:2, nsPair:5,  ewPair:2,  boards:[9,10]  },
-  { round:10, table:3, nsPair:6,  ewPair:11, boards:[13,14] },
-  { round:10, table:4, nsPair:3,  ewPair:4,  boards:[15,16] },
-  { round:10, table:5, nsPair:12, ewPair:10, boards:[17,18] }, // phantom NS
-  { round:10, table:6, nsPair:8,  ewPair:1,  boards:[19,20] },
+  { round:10, table:1, nsPair:7,  ewPair:9,  boards:[10,11,12]   },
+  { round:10, table:2, nsPair:5,  ewPair:2,  boards:[13,14,15]  },
+  { round:10, table:3, nsPair:6,  ewPair:11, boards:[19,20,21] },
+  { round:10, table:4, nsPair:3,  ewPair:4,  boards:[22,23,24] },
+  { round:10, table:5, nsPair:12, ewPair:10, boards:[25,26,27] }, // phantom NS
+  { round:10, table:6, nsPair:8,  ewPair:1,  boards:[28,29,30] },
 
   // ── ROUND 11 ─────────────────────────────────────
-  { round:11, table:1, nsPair:8,  ewPair:10, boards:[9,10]  },
-  { round:11, table:2, nsPair:6,  ewPair:3,  boards:[11,12] },
-  { round:11, table:3, nsPair:7,  ewPair:1,  boards:[15,16] },
-  { round:11, table:4, nsPair:4,  ewPair:5,  boards:[17,18] },
-  { round:11, table:5, nsPair:12, ewPair:11, boards:[19,20] }, // phantom NS
-  { round:11, table:6, nsPair:9,  ewPair:2,  boards:[21,22] },
+  { round:11, table:1, nsPair:8,  ewPair:10, boards:[13,14,15]  },
+  { round:11, table:2, nsPair:6,  ewPair:3,  boards:[16,17,18] },
+  { round:11, table:3, nsPair:7,  ewPair:1,  boards:[22,23,24] },
+  { round:11, table:4, nsPair:4,  ewPair:5,  boards:[25,26,27] },
+  { round:11, table:5, nsPair:12, ewPair:11, boards:[28,29,30] }, // phantom NS
+  { round:11, table:6, nsPair:9,  ewPair:2,  boards:[31,32,33] },
 ];
 
 // ─────────────────────────────────────────────────────────────
