@@ -7,7 +7,7 @@ const HOWELL_INFO = {
   3: { pairs: '5 or 6',   rounds: 5,  boards: 20 },
   4: { pairs: '7 or 8',   rounds: 7,  boards: 21 },
   5: { pairs: '9 or 10',  rounds: 9,  boards: 18 },
-  6: { pairs: '11 or 12', rounds: 11, boards: 22 },
+  6: { pairs: '11 or 12', rounds: 11, boards: 33 },
   7: { pairs: '13 or 14', rounds: 13, boards: 26 },
 };
 
