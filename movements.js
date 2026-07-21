@@ -344,19 +344,75 @@ const HOWELL_7TABLE = [
   { round:13, table:7, nsPair:5, ewPair:2, boards:[11,12] },
 ];
 
-function getHowellMovement(tables) {
-  switch (tables) {
-    case 3: return HOWELL_3TABLE;
-    case 4: return HOWELL_4TABLE;
-    case 5: return HOWELL_5TABLE;
-    case 6: return HOWELL_6TABLE;
-    case 7: return HOWELL_7TABLE;
-    default: throw new Error(`No Howell movement for ${tables} tables`);
-  }
+// ─────────────────────────────────────────────────────────────
+//  Board-set generator
+//
+//  Every Howell above is written as seatings + board *sets*: each
+//  (table, round) slot plays one board-set, and the sets rotate
+//  round-to-round.  The board NUMBERS are just  set-index × width.
+//  So we store each movement once at its native width and regenerate
+//  the board numbers for whatever boards-per-round the director picks.
+//  Choosing the default width reproduces the original arrays exactly.
+// ─────────────────────────────────────────────────────────────
+const RAW_MOVEMENTS = {
+  3: HOWELL_3TABLE,
+  4: HOWELL_4TABLE,
+  5: HOWELL_5TABLE,
+  6: HOWELL_6TABLE,
+  7: HOWELL_7TABLE,
+};
+
+// Default boards-per-round for each table count (the club's usual game).
+const DEFAULT_BOARDS_PER_ROUND = { 3: 4, 4: 3, 5: 2, 6: 2, 7: 2 };
+
+// Allowed range a director may choose.
+const MIN_BOARDS_PER_ROUND = 2;
+const MAX_BOARDS_PER_ROUND = 4;
+
+function getDefaultBoardsPerRound(tables) {
+  return DEFAULT_BOARDS_PER_ROUND[tables] ?? null;
 }
 
-function getPhantomPairNumber(tables) {
-  return { 3:6, 4:8, 5:10, 6:12, 7:14 }[tables] ?? null;
+// Rounds are a property of the movement (2n-1), independent of board width.
+function getRoundCount(tables) {
+  const raw = RAW_MOVEMENTS[tables];
+  return raw ? Math.max(...raw.map(s => s.round)) : null;
 }
 
-module.exports = { getHowellMovement, getPhantomPairNumber };
+function getHowellMovement(tables, boardsPerRound) {
+  const raw = RAW_MOVEMENTS[tables];
+  if (!raw) throw new Error(`No Howell movement for ${tables} tables`);
+
+  const nativeWidth = raw[0].boards.length;
+
+  // Resolve + clamp the requested width; fall back to the club default.
+  let width = boardsPerRound ?? DEFAULT_BOARDS_PER_ROUND[tables];
+  width = Math.round(Number(width));
+  if (!Number.isFinite(width)) width = DEFAULT_BOARDS_PER_ROUND[tables];
+  width = Math.max(MIN_BOARDS_PER_ROUND, Math.min(MAX_BOARDS_PER_ROUND, width));
+
+  // Regenerate board numbers from each slot's set index.
+  return raw.map(slot => {
+    const setIndex = (slot.boards[0] - 1) / nativeWidth;   // 0-based, integer
+    const boards = [];
+    for (let k = 0; k < width; k++) boards.push(setIndex * width + k + 1);
+    return { ...slot, boards };
+  });
+}
+
+// Phantom is pair 1 (a MOVING pair in every movement), so the stationary
+// seat — the last pair number — always belongs to a real pair. This lets a
+// player who needs a fixed table always get one. The bye simply travels
+// round the room each round instead of sitting at the stationary table.
+function getPhantomPairNumber(/* tables */) {
+  return 1;
+}
+
+module.exports = {
+  getHowellMovement,
+  getPhantomPairNumber,
+  getDefaultBoardsPerRound,
+  getRoundCount,
+  MIN_BOARDS_PER_ROUND,
+  MAX_BOARDS_PER_ROUND,
+};
