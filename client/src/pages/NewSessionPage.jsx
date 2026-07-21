@@ -4,12 +4,13 @@ import Navbar from '../components/Navbar.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const HOWELL_INFO = {
-  3: { pairs: '5 or 6',   rounds: 5,  boards: 20 },
-  4: { pairs: '7 or 8',   rounds: 7,  boards: 21 },
-  5: { pairs: '9 or 10',  rounds: 9,  boards: 18 },
-  6: { pairs: '11 or 12', rounds: 11, boards: 33 },
-  7: { pairs: '13 or 14', rounds: 13, boards: 26 },
+  3: { pairs: '5 or 6',   rounds: 5,  defaultBpr: 4 },
+  4: { pairs: '7 or 8',   rounds: 7,  defaultBpr: 3 },
+  5: { pairs: '9 or 10',  rounds: 9,  defaultBpr: 2 },
+  6: { pairs: '11 or 12', rounds: 11, defaultBpr: 2 },
+  7: { pairs: '13 or 14', rounds: 13, defaultBpr: 2 },
 };
+const BOARDS_PER_ROUND_OPTIONS = [2, 3, 4];
 
 export default function NewSessionPage() {
   const { apiFetch } = useAuth();
@@ -19,12 +20,21 @@ export default function NewSessionPage() {
   const [date,         setDate]         = useState(today());
   const [movementType, setMovementType] = useState('howell');
   const [tables,       setTables]       = useState(3);
+  const [boardsPerRound, setBoardsPerRound] = useState(HOWELL_INFO[3].defaultBpr);
   const [numRounds,    setNumRounds]    = useState('');
   const [hasPhantom,   setHasPhantom]   = useState(false);
   const [error,        setError]        = useState('');
   const [loading,      setLoading]      = useState(false);
 
   const howellInfo = HOWELL_INFO[tables] ?? {};
+  const totalBoards = (howellInfo.rounds ?? 0) * boardsPerRound;
+
+  // When the director changes table count, snap boards-per-round back to
+  // that movement's club default (they can then override it).
+  const pickTables = (t) => {
+    setTables(t);
+    if (HOWELL_INFO[t]) setBoardsPerRound(HOWELL_INFO[t].defaultBpr);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,6 +47,9 @@ export default function NewSessionPage() {
         tablesCount: tables,
         hasPhantom: movementType === 'howell' ? hasPhantom : false,
       };
+      if (movementType === 'howell') {
+        body.boardsPerRound = boardsPerRound;
+      }
       if (movementType === 'manual') {
         if (!numRounds || parseInt(numRounds) < 1) {
           setError('Please enter the number of rounds.');
@@ -133,7 +146,7 @@ export default function NewSessionPage() {
                   {/* Table selector buttons */}
                   <div className="flex gap-3">
                     {[3, 4, 5, 6, 7].map(t => (
-                      <button key={t} type="button" onClick={() => setTables(t)}
+                      <button key={t} type="button" onClick={() => pickTables(t)}
                         className={`flex-1 rounded-xl border py-3 transition-all
                           ${tables === t
                             ? 'bg-gold-400 border-gold-400 text-felt-950 font-bold'
@@ -144,12 +157,41 @@ export default function NewSessionPage() {
                     ))}
                   </div>
 
+                  {/* Boards per round selector */}
+                  {HOWELL_INFO[tables] && (
+                    <div className="mt-3">
+                      <label className="text-xs text-cream-400 uppercase tracking-widest block mb-2">
+                        Boards per Round
+                      </label>
+                      <div className="flex gap-3">
+                        {BOARDS_PER_ROUND_OPTIONS.map(n => (
+                          <button key={n} type="button" onClick={() => setBoardsPerRound(n)}
+                            className={`flex-1 rounded-xl border py-2.5 transition-all
+                              ${boardsPerRound === n
+                                ? 'bg-gold-400 border-gold-400 text-felt-950 font-bold'
+                                : 'border-gold-500/30 text-cream-300 hover:border-gold-400/60'}`}>
+                            <div className="text-lg font-display">{n}</div>
+                            {n === howellInfo.defaultBpr && (
+                              <div className="text-[10px] mt-0.5 opacity-75">default</div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Info box */}
                   {HOWELL_INFO[tables] && (
                     <div className="mt-3 bg-felt-700/60 rounded-lg px-4 py-3 text-sm text-cream-400 space-y-0.5">
                       <div>Pairs: <span className="text-cream-100">{howellInfo.pairs}</span></div>
                       <div>Rounds: <span className="text-cream-100">{howellInfo.rounds}</span></div>
-                      <div>Boards: <span className="text-cream-100">{howellInfo.boards}</span></div>
+                      <div>
+                        Boards:{' '}
+                        <span className="text-cream-100">{totalBoards}</span>
+                        <span className="text-cream-500">
+                          {' '}({howellInfo.rounds} rounds × {boardsPerRound})
+                        </span>
+                      </div>
                     </div>
                   )}
 
