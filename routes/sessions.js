@@ -58,7 +58,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   const {
     name, date, tablesCount, movementType = 'howell',
-    numBoards, hasPhantom = false,
+    numBoards, boardsPerRound, hasPhantom = false,
   } = req.body ?? {};
 
   if (!name || !date || !tablesCount) {
@@ -82,9 +82,11 @@ router.post('/', requireAuth, async (req, res) => {
     let movement = [], phantomPair = null, boards = 0, rounds = 0;
 
     if (movementType === 'howell') {
-      movement    = getHowellMovement(tablesCount);
+      movement    = getHowellMovement(tablesCount, boardsPerRound);
       phantomPair = hasPhantom ? getPhantomPairNumber(tablesCount) : null;
-      boards      = numBoards ?? Math.max(...movement.flatMap(m => m.boards));
+      // Board count is always derived from the (already width-adjusted)
+      // movement, so it stays consistent with what actually gets scaffolded.
+      boards      = Math.max(...movement.flatMap(m => m.boards));
       rounds      = Math.max(...movement.map(m => m.round));
     } else {
       boards = numBoards ?? 0;
