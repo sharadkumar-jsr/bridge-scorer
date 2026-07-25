@@ -185,10 +185,8 @@ function calculateRawScore({
  */
 function calculateMatchpoints(results) {
   const played   = results.filter(r => !r.isBye);
-  const byes     = results.filter(r =>  r.isBye);
   const n        = played.length;
   const maxMp    = Math.max(0, (n - 1) * 2);
-  const avgMp    = maxMp / 2;               // 50 % of max for bye pairs
 
   const out = {};
 
@@ -208,10 +206,17 @@ function calculateMatchpoints(results) {
     out[r.pairEW] = { mp: ewMP, maxMp };
   }
 
-  // Bye pairs receive average score (real pairNS; phantom pairEW not scored)
-  for (const r of byes) {
-    out[r.pairNS] = { mp: avgMp, maxMp, isBye: true };
-  }
+  // A pair sitting out (the phantom's opponent this round) does not play these
+  // boards, so the board is factored out of that pair's score entirely — no
+  // matchpoints, and nothing added to their maximum. Each pair is ranked only
+  // on the boards it actually played, so every pair's maximum stays identical.
+  //
+  // We deliberately emit nothing for bye rows. The previous version credited
+  // only r.pairNS, which silently assumed the phantom was always the EW
+  // (visiting) pair. That held for the old stationary phantom (always the
+  // highest pair number, seated NS), but breaks now that the phantom is a
+  // moving pair that sits NS in some rounds — which is what produced the
+  // mixed 160 / 176 maximums.
 
   return out;
 }
