@@ -99,11 +99,11 @@ export default function SetupPairsPage() {
           </div>
         )}
 
-        {/* ── PIN notice ────────────────────────────────────────── */}
+        {/* ── Code notice ────────────────────────────────────────── */}
         <div className="card-felt relative p-4 mb-5 border-gold-400/40">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-gold-300 font-semibold text-sm flex items-center gap-2">
-              🔐 Pair PINs — Tell each pair their PIN before the game starts
+              🔐 Pair codes — Tell each pair their code before the game starts
             </h3>
             <button
               onClick={() => setShowPins(s => !s)}
@@ -113,8 +113,8 @@ export default function SetupPairsPage() {
             </button>
           </div>
           <p className="text-cream-400 text-xs mb-3">
-            Players need their PIN to log in via the invite link. Tell each pair their PIN
-            verbally, write it on their scorecard, or send a private WhatsApp message.
+            Players need their 2-digit code to log in via the invite link. Tell each pair
+            their code verbally, write it on their scorecard, or send a private WhatsApp message.
           </p>
           {showPins && (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -123,7 +123,7 @@ export default function SetupPairsPage() {
                   className="bg-felt-700 rounded-lg px-3 py-2.5 flex items-center justify-between">
                   <span className="text-cream-400 text-sm">Pair {p.pair_number}</span>
                   <span className="font-mono text-xl text-gold-300 font-bold tracking-widest">
-                    {p.pin ?? '----'}
+                    {p.pin ?? '--'}
                   </span>
                 </div>
               ))}
@@ -151,7 +151,7 @@ export default function SetupPairsPage() {
         <div className="space-y-3 mb-4">
           {realPairs.map(pair => (
             <div key={pair.pair_number} className="card-felt relative p-4 flex items-center gap-3">
-              {/* Pair number + PIN */}
+              {/* Pair number + code */}
               <div className="flex-shrink-0 text-center w-14">
                 <div className="w-10 h-10 rounded-full bg-gold-400/10 border border-gold-400/30
                                 flex items-center justify-center font-display text-gold-300 text-sm
@@ -159,7 +159,7 @@ export default function SetupPairsPage() {
                   {pair.pair_number}
                 </div>
                 {pair.pin && (
-                  <div className="font-mono text-xs text-gold-500 tracking-wider">{pair.pin}</div>
+                  <div className="font-mono text-sm text-gold-300 tracking-wider">{pair.pin}</div>
                 )}
               </div>
 
