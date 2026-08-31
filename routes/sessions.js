@@ -110,9 +110,19 @@ router.post('/', requireAuth, async (req, res) => {
     const session = sessRows[0];
 
     // Create session_pairs
+    // Each real pair gets a 2-digit code (10-99), unique within the session
+    // so the director never has to read out the same code twice.
+    const usedCodes = new Set();
+    const nextCode  = () => {
+      let c;
+      do { c = String(Math.floor(10 + Math.random() * 90)); } while (usedCodes.has(c));
+      usedCodes.add(c);
+      return c;
+    };
+
     for (const pairNum of [...allPairs].sort((a,b)=>a-b)) {
       const isPhantom = phantomPair !== null && pairNum === phantomPair;
-      const pin       = isPhantom ? null : String(Math.floor(1000 + Math.random() * 9000));
+      const pin       = isPhantom ? null : nextCode();
       await client.query(
         `INSERT INTO session_pairs
            (session_id, pair_number, is_phantom, pin)
