@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Delete } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext.jsx';
 
+// Length of the pair access code. Change here if it ever needs to move again.
+const CODE_LENGTH = 2;
+
 export default function PlayJoinPage() {
   const { token }        = useParams();
   const { joinAsPlayer } = usePlayer();
@@ -12,7 +15,7 @@ export default function PlayJoinPage() {
   const [pairs,        setPairs]        = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState('');
-  // Step 1 = select pair, Step 2 = enter PIN
+  // Step 1 = select pair, Step 2 = enter code
   const [step,         setStep]         = useState(1);
   const [selectedPair, setSelectedPair] = useState(null);
   const [pin,          setPin]          = useState('');
@@ -33,17 +36,13 @@ export default function PlayJoinPage() {
     .finally(() => setLoading(false));
   }, [token]);
 
-  // PIN pad digit press
+  // Keypad digit press
   const pressDigit = (d) => {
-    if (pin.length < 4) setPin(p => p + d);
+    setPinError('');
+    if (pin.length < CODE_LENGTH) setPin(p => p + d);
   };
-  const backspace = () => setPin(p => p.slice(0, -1));
-  const clearPin  = () => setPin('');
-
-  // Auto-submit when 4 digits entered
-  useEffect(() => {
-    if (pin.length === 4) handleJoin();
-  }, [pin]);
+  const backspace = () => { setPinError(''); setPin(p => p.slice(0, -1)); };
+  const clearPin  = () => { setPinError(''); setPin(''); };
 
   const handleSelectPair = (pair) => {
     setSelectedPair(pair);
@@ -53,7 +52,7 @@ export default function PlayJoinPage() {
   };
 
   const handleJoin = async () => {
-    if (pin.length !== 4) return;
+    if (pin.length !== CODE_LENGTH) return;
     setJoining(true); setPinError('');
     try {
       const res  = await fetch(`/api/play/${token}/join`, {
@@ -146,7 +145,7 @@ export default function PlayJoinPage() {
           </div>
         )}
 
-        {/* ── STEP 2: Enter PIN ── */}
+        {/* ── STEP 2: Enter code ── */}
         {step === 2 && selectedPair && (
           <div className="card-felt relative p-6">
             {/* Back */}
@@ -168,13 +167,13 @@ export default function PlayJoinPage() {
                   {[selectedPair.player1_name, selectedPair.player2_name].filter(Boolean).join(' / ')}
                 </p>
               )}
-              <p className="text-cream-400/60 text-sm mt-3">Enter your 4-digit PIN</p>
-              <p className="text-cream-400/40 text-xs">(Given to you by the director)</p>
+              <p className="text-cream-200 text-base mt-3">Enter your 2-digit code</p>
+              <p className="text-cream-400 text-sm">Given to you by the director</p>
             </div>
 
-            {/* PIN dots */}
+            {/* Code dots */}
             <div className="flex justify-center gap-4 mb-4">
-              {[0,1,2,3].map(i => (
+              {Array.from({ length: CODE_LENGTH }, (_, i) => i).map(i => (
                 <div key={i}
                   className={`w-5 h-5 rounded-full border-2 transition-all
                     ${i < pin.length
@@ -197,14 +196,14 @@ export default function PlayJoinPage() {
               </div>
             )}
 
-            {/* PIN pad */}
+            {/* Keypad */}
             {!joining && (
               <div className="grid grid-cols-3 gap-3">
                 {[1,2,3,4,5,6,7,8,9].map(d => (
                   <button
                     key={d}
                     onClick={() => pressDigit(String(d))}
-                    disabled={pin.length >= 4}
+                    disabled={pin.length >= CODE_LENGTH}
                     className="h-14 rounded-xl border border-gold-500/30 font-mono text-2xl
                                text-cream-100 hover:bg-gold-400/10 hover:border-gold-400/60
                                transition-all active:scale-95 disabled:opacity-30"
@@ -222,7 +221,7 @@ export default function PlayJoinPage() {
                 </button>
                 <button
                   onClick={() => pressDigit('0')}
-                  disabled={pin.length >= 4}
+                  disabled={pin.length >= CODE_LENGTH}
                   className="h-14 rounded-xl border border-gold-500/30 font-mono text-2xl
                              text-cream-100 hover:bg-gold-400/10 hover:border-gold-400/60
                              transition-all active:scale-95 disabled:opacity-30"
@@ -239,11 +238,23 @@ export default function PlayJoinPage() {
                 </button>
               </div>
             )}
+
+            {/* Explicit submit — with only two digits, auto-submit would fire
+                before a mistyped first digit could be corrected. */}
+            {!joining && (
+              <button
+                onClick={handleJoin}
+                disabled={pin.length !== CODE_LENGTH}
+                className="btn-gold w-full mt-3 h-14 text-lg"
+              >
+                Enter
+              </button>
+            )}
           </div>
         )}
 
         <p className="text-center text-cream-400/40 text-xs mt-6">
-          Only enter your own pair number and PIN
+          Only enter your own pair number and code
         </p>
       </div>
     </div>
