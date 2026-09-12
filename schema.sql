@@ -49,7 +49,7 @@ CREATE TABLE sessions (
   id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   name           TEXT        NOT NULL,
   date           DATE        NOT NULL DEFAULT CURRENT_DATE,
-  tables_count   SMALLINT    NOT NULL CHECK (tables_count BETWEEN 3 AND 6),
+  tables_count   SMALLINT    NOT NULL CHECK (tables_count BETWEEN 3 AND 7),
   movement_type  TEXT        NOT NULL DEFAULT 'howell'
                              CHECK (movement_type IN ('howell')),
   num_boards     SMALLINT    NOT NULL,   -- total boards in play (e.g. 20, 21, 18)
