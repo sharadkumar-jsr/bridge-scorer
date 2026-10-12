@@ -5,6 +5,16 @@ const jwt    = require('jsonwebtoken');
 const db     = require('../db');
 const { requirePlayerAuth } = require('../middleware/playerAuth');
 const { calculateRawScore, calculateMatchpoints } = require('../scoring-engine');
+const { validateBoardEntry } = require('../validation');
+const { rateLimit } = require('../middleware/rateLimit');
+
+// Pair PINs are 2 digits (90 possibilities) — cap guesses per client + session link.
+const joinLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  keyFn: (req) => `${req.ip}|${req.params.token}`,
+  message: 'Too many PIN attempts. Please wait a few minutes or ask your director.',
+});
 
 // ── GET /api/play/:token ──────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -38,7 +48,7 @@ router.get('/pairs', async (req, res) => {
 });
 
 // ── POST /api/play/:token/join ────────────────────────────────
-router.post('/join', async (req, res) => {
+router.post('/join', joinLimiter, async (req, res) => {
   const { pairNumber, pin } = req.body ?? {};
   if (!pairNumber) return res.status(400).json({ error: 'pairNumber required' });
   if (!pin)        return res.status(400).json({ error: 'PIN required' });
@@ -121,10 +131,9 @@ router.get('/schedule', requirePlayerAuth, async (req, res) => {
 
 // ── PUT /api/play/:token/boards/:resultId ─────────────────────
 router.put('/boards/:resultId', requirePlayerAuth, async (req, res) => {
-  const { declarer, level, suit, doubled = 'none', tricks } = req.body ?? {};
-  if (!declarer || level == null || !suit || tricks == null) {
-    return res.status(400).json({ error: 'declarer, level, suit, tricks are required' });
-  }
+  const check = validateBoardEntry(req.body);
+  if (!check.ok) return res.status(400).json({ error: check.error });
+  const { declarer, level, suit, doubled, tricks } = check.value;
 
   try {
     const { rows } = await db.query(
@@ -174,6 +183,13 @@ router.put('/boards/:resultId', requirePlayerAuth, async (req, res) => {
       io.to(`session:${req.player.sessionId}`).emit('result:updated', {
         result: updated[0], boardMatchpoints: bmp, enteredByPair: req.player.pairNumber,
       });
+      // Push fresh standings to directors watching the live leaderboard.
+      try {
+        const rankings = await computeFullStandings(req.player.sessionId);
+        io.to(`session:${req.player.sessionId}`).emit('scores:updated', {
+          sessionId: req.player.sessionId, rankings,
+        });
+      } catch (e) { console.error('[play] standings broadcast failed', e.message); }
     }
     res.json({ ok: true, nsScore });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }

@@ -2,11 +2,22 @@
 // routes/auth.js — POST /api/auth/login|refresh|logout
 const router  = require('express').Router();
 const bcrypt  = require('bcrypt');
+const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { body, validationResult } = require('express-validator');
 const db      = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { rateLimit }   = require('../middleware/rateLimit');
+
+// 10 login attempts / 15 min per client IP + email
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyFn: (req) => `${req.ip}|${String(req.body?.email ?? '').toLowerCase()}`,
+  message: 'Too many login attempts. Please wait a few minutes and try again.',
+});
+const refreshLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -19,15 +30,26 @@ function signAccessToken(user) {
 }
 
 function signRefreshToken(userId) {
-  const raw = uuidv4();                                 // random, opaque
   const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN ?? '7d';
-  // Sign it so we can verify expiry without hitting the DB every time
-  const token = jwt.sign({ sub: userId }, process.env.JWT_REFRESH_SECRET, { expiresIn });
+  // jwtid makes every refresh token unique, even if two are issued in the same second.
+  const token = jwt.sign({ sub: userId }, process.env.JWT_REFRESH_SECRET, {
+    expiresIn,
+    jwtid: uuidv4(),
+  });
   return { raw: token, expiresIn };
 }
 
+// Refresh tokens are stored as SHA-256 digests.
+// (bcrypt was used before, but it only reads the first 72 bytes of its input —
+//  for a JWT that is just the header plus the start of the payload, i.e. the
+//  same for every token of a user — so a revoked old token still "matched"
+//  the user's newest stored hash and could be replayed.)
+function hashToken(rawToken) {
+  return crypto.createHash('sha256').update(rawToken).digest('hex');
+}
+
 async function storeRefreshToken(userId, rawToken, expiresIn) {
-  const hash = await bcrypt.hash(rawToken, 10);
+  const hash = hashToken(rawToken);
   const ms   = parseDuration(expiresIn);
   const exp  = new Date(Date.now() + ms);
   await db.query(
@@ -48,6 +70,7 @@ function parseDuration(str) {
 // ── POST /api/auth/login ─────────────────────────────────────
 router.post(
   '/login',
+  loginLimiter,
   [
     body('email').isEmail().normalizeEmail(),
     body('password').isLength({ min: 6 }),
@@ -91,7 +114,7 @@ router.post(
 );
 
 // ── POST /api/auth/refresh ───────────────────────────────────
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', refreshLimiter, async (req, res) => {
   const { refreshToken } = req.body ?? {};
   if (!refreshToken) return res.status(400).json({ error: 'refreshToken required' });
 
@@ -100,27 +123,37 @@ router.post('/refresh', async (req, res) => {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const userId  = payload.sub;
 
-    // Find a matching, non-revoked token in DB
+    // Look the token up by its digest
     const { rows } = await db.query(
-      `SELECT id, token_hash FROM refresh_tokens
-       WHERE user_id = $1 AND revoked = FALSE AND expires_at > NOW()`,
-      [userId]
+      `SELECT id, revoked, expires_at FROM refresh_tokens
+       WHERE user_id = $1 AND token_hash = $2`,
+      [userId, hashToken(refreshToken)]
     );
+    const found = rows[0];
+    if (!found) return res.status(401).json({ error: 'Refresh token invalid or revoked' });
 
-    let validRow = null;
-    for (const row of rows) {
-      if (await bcrypt.compare(refreshToken, row.token_hash)) { validRow = row; break; }
+    if (found.revoked) {
+      // A rotated-out token is being replayed — assume it leaked and end every session.
+      await db.query(`UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1`, [userId]);
+      return res.status(401).json({ error: 'Refresh token invalid or revoked' });
     }
-    if (!validRow) return res.status(401).json({ error: 'Refresh token invalid or revoked' });
+    if (new Date(found.expires_at) <= new Date()) {
+      return res.status(401).json({ error: 'Refresh token invalid or revoked' });
+    }
 
-    // Rotate: revoke old, issue new
-    await db.query(`UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1`, [validRow.id]);
+    // Rotate: revoke old (atomically — only one concurrent refresh can win), issue new
+    const { rowCount } = await db.query(
+      `UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1 AND revoked = FALSE`,
+      [found.id]
+    );
+    if (rowCount === 0) return res.status(401).json({ error: 'Refresh token invalid or revoked' });
 
     const { rows: uRows } = await db.query(
       `SELECT id, email, display_name, role FROM users WHERE id = $1`,
       [userId]
     );
     const user = uRows[0];
+    if (!user) return res.status(401).json({ error: 'Refresh token invalid or revoked' });
 
     const accessToken           = signAccessToken(user);
     const { raw: newRefresh }   = signRefreshToken(user.id);
@@ -142,20 +175,12 @@ router.post('/logout', requireAuth, async (req, res) => {
   if (refreshToken) {
     // Best-effort revocation — don't fail the logout if this errors
     try {
-      const payload = jwt.decode(refreshToken);
-      if (payload?.sub) {
-        const { rows } = await db.query(
-          `SELECT id, token_hash FROM refresh_tokens
-           WHERE user_id = $1 AND revoked = FALSE`,
-          [payload.sub]
-        );
-        for (const row of rows) {
-          if (await bcrypt.compare(refreshToken, row.token_hash)) {
-            await db.query(`UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1`, [row.id]);
-            break;
-          }
-        }
-      }
+      // Only revoke a token that belongs to the authenticated user
+      await db.query(
+        `UPDATE refresh_tokens SET revoked = TRUE
+         WHERE user_id = $1 AND token_hash = $2`,
+        [req.user.id, hashToken(refreshToken)]
+      );
     } catch (_) { /* intentional */ }
   }
   res.json({ ok: true });

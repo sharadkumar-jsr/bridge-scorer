@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft, Printer, FileDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, ArrowLeft, Printer, FileDown, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react';
 import Navbar from '../components/Navbar.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -128,6 +128,33 @@ export default function DirectorResultsPage() {
   const downloadPdf = () => {
     if (!auth?.accessToken) return;
     window.open(`/api/sessions/${id}/pdf?t=${encodeURIComponent(auth.accessToken)}`, '_blank');
+  };
+
+  // CSV export (opens in Excel / Google Sheets). Uses apiFetch so the Authorization
+  // header and automatic token refresh apply; the file is saved from a Blob.
+  const [csvBusy, setCsvBusy] = useState('');
+  const downloadCsv = async (type) => {
+    setCsvBusy(type);
+    try {
+      const res = await apiFetch(`/api/sessions/${id}/csv?type=${type}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `bridge-${type}-${session?.date?.slice(0, 10) ?? id}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCsvBusy('');
+    }
   };
 
   function pctColour(pct) {
@@ -568,6 +595,18 @@ export default function DirectorResultsPage() {
           <p className="text-center text-cream-400/50 text-xs">
             Recommended on iPhone/iPad — opens a PDF you can share, save, or AirPrint
           </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={()=>downloadCsv('standings')} disabled={!!csvBusy}
+              className="btn-ghost flex items-center justify-center gap-2 py-3 disabled:opacity-60">
+              {csvBusy==='standings' ? <Loader2 size={16} className="animate-spin"/> : <FileSpreadsheet size={16}/>}
+              CSV — Standings
+            </button>
+            <button onClick={()=>downloadCsv('boards')} disabled={!!csvBusy}
+              className="btn-ghost flex items-center justify-center gap-2 py-3 disabled:opacity-60">
+              {csvBusy==='boards' ? <Loader2 size={16} className="animate-spin"/> : <FileSpreadsheet size={16}/>}
+              CSV — Boards
+            </button>
+          </div>
           <button onClick={()=>window.print()}
             className="btn-ghost w-full flex items-center justify-center gap-2 py-3">
             <Printer size={16}/> Browser Print — Standings + Travellers + Pair Cards

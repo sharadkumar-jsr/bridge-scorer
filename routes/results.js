@@ -4,6 +4,19 @@ const router = require('express').Router({ mergeParams: true });
 const db     = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { calculateRawScore, calculateMatchpoints } = require('../scoring-engine');
+const { validateBoardEntry } = require('../validation');
+
+// Push fresh standings to directors watching the live leaderboard.
+// (play.js is required lazily to avoid a circular import at load time.)
+async function broadcastStandings(io, sessionId) {
+  try {
+    const { computeFullStandings } = require('./play');
+    const rankings = await computeFullStandings(sessionId);
+    io.to(`session:${sessionId}`).emit('scores:updated', { sessionId, rankings });
+  } catch (e) {
+    console.error('[results] standings broadcast failed', e.message);
+  }
+}
 
 // ── GET /api/sessions/:sessionId/results ──────────────────────
 router.get('/', requireAuth, async (req, res) => {
@@ -32,11 +45,9 @@ router.get('/scores', requireAuth, async (req, res) => {
 // ── PUT /api/sessions/:sessionId/results/:boardId ─────────────
 // Director override — can edit ANY board result regardless of lock
 router.put('/:boardId', requireAuth, async (req, res) => {
-  const { declarer, level, suit, doubled = 'none', tricks } = req.body ?? {};
-
-  if (level == null) {
-    return res.status(400).json({ error: 'level is required' });
-  }
+  const check = validateBoardEntry(req.body, { allowPassedOut: true });
+  if (!check.ok) return res.status(400).json({ error: check.error });
+  const { declarer, level, suit, doubled, tricks } = check.value;
 
   try {
     // Verify board belongs to this session
@@ -64,9 +75,6 @@ router.put('/:boardId', requireAuth, async (req, res) => {
       // Passed out — score is 0
       nsScore = 0;
     } else {
-      if (!declarer || !suit || tricks == null) {
-        return res.status(400).json({ error: 'declarer, suit, tricks required' });
-      }
       nsScore = calculateRawScore({
         declarer, level, suit, doubled, tricks,
         boardNumber: rows[0].board_number,
@@ -96,6 +104,7 @@ router.put('/:boardId', requireAuth, async (req, res) => {
         result: updated[0],
         overriddenByDirector: true,
       });
+      await broadcastStandings(io, req.params.sessionId);
     }
 
     res.json({ ok: true, nsScore, result: updated[0] });
@@ -135,6 +144,7 @@ router.patch('/:boardId/clear', requireAuth, async (req, res) => {
       io.to(`session:${req.params.sessionId}`).emit('result:cleared', {
         boardId: req.params.boardId,
       });
+      await broadcastStandings(io, req.params.sessionId);
     }
 
     res.json({ ok: true });

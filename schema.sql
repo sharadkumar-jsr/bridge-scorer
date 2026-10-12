@@ -57,7 +57,9 @@ CREATE TABLE sessions (
   has_phantom    BOOLEAN     NOT NULL DEFAULT FALSE,
   phantom_pair   SMALLINT,              -- pair number that is the phantom (if any)
   status         TEXT        NOT NULL DEFAULT 'setup'
-                             CHECK (status IN ('setup', 'active', 'completed')),
+                             CHECK (status IN ('setup', 'active', 'completed', 'archived')),
+  invite_token     TEXT      UNIQUE,                -- shared join link for players
+  results_released BOOLEAN   NOT NULL DEFAULT FALSE, -- director releases results to players
   created_by     UUID        NOT NULL REFERENCES users(id),
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -77,6 +79,7 @@ CREATE TABLE session_pairs (
   player1_name TEXT,
   player2_name TEXT,
   is_phantom   BOOLEAN     NOT NULL DEFAULT FALSE,
+  pin          TEXT,                 -- 2-digit join code (NULL for the phantom pair)
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   UNIQUE (session_id, pair_number)

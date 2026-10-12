@@ -16,7 +16,9 @@
 //   error           { message }                   → something went wrong
 
 const jwt = require('jsonwebtoken');
-const { computeSessionScores } = require('../routes/results');
+// computeFullStandings lives in routes/play.js (routes/results.js never exported
+// a computeSessionScores, so the live-score pushes below used to throw).
+const { computeFullStandings: computeSessionScores } = require('../routes/play');
 
 /**
  * Attach Socket.io event handlers.
@@ -31,6 +33,11 @@ function registerDirectorSocket(io) {
 
     try {
       const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+      // Player tokens are signed with the same secret; they must not be able to
+      // subscribe to live standings before the director releases results.
+      if (payload.role !== 'admin' && payload.role !== 'director') {
+        return next(new Error('Director access only'));
+      }
       socket.user = { id: payload.sub, email: payload.email, role: payload.role };
       next();
     } catch {
