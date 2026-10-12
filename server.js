@@ -14,6 +14,7 @@ const resultsRouter   = require('./routes/results');
 const playRouter      = require('./routes/play');
 const pdfRouter       = require('./routes/pdf');
 const csvRouter       = require('./routes/csv');
+const sheetsRouter    = require('./routes/sheets');
 const travellerRouter = require('./routes/traveller');
 const { registerDirectorSocket } = require('./socket/director');
 
@@ -48,6 +49,7 @@ app.use('/api/sessions/:sessionId/pairs',    pairsRouter);
 app.use('/api/sessions/:sessionId/results',  resultsRouter);
 app.use('/api/sessions/:id/pdf',             pdfRouter);
 app.use('/api/sessions/:id/csv',             csvRouter);
+app.use('/api/sessions/:id/sheets',          sheetsRouter);
 app.use('/api/play/:token',                  playRouter);
 app.use('/api/play/:token/traveller',        travellerRouter);
 

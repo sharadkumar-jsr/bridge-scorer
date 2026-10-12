@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Check, Loader2, Eye, EyeOff } from 'lucide-react';
 import Navbar from '../components/Navbar.jsx';
+import SheetDownloads from '../components/SheetDownloads.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function SetupPairsPage() {
@@ -129,6 +130,15 @@ export default function SetupPairsPage() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* ── Printable sheets ──────────────────────────────────── */}
+        <div className="card-felt relative p-4 mb-5">
+          <p className="text-xs text-cream-400 uppercase tracking-widest mb-2">Printable sheets</p>
+          <SheetDownloads sessionId={id} onError={setError} />
+          <p className="text-[11px] text-cream-400/60 mt-2">
+            Enter the names first, then download — the sheets use the names saved below.
+          </p>
         </div>
 
         {/* ── Section header ────────────────────────────────────── */}

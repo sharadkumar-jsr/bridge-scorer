@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Share2, Trophy, Archive, BarChart2, Copy, Check, Pencil, X } from 'lucide-react';
 import Navbar from '../components/Navbar.jsx';
+import PairNamesCard from '../components/PairNamesCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const DECLARERS = ['N','S','E','W'];
@@ -239,6 +240,14 @@ export default function DirectorPage() {
             </div>
           </div>
         )}
+
+        {/* Pair names (editable until scoring starts) + printable PDF sheets */}
+        <PairNamesCard
+          sessionId={id}
+          pairs={session?.pairs}
+          editable={session?.status === 'active' && enteredBoards.length === 0}
+          onSaved={load}
+        />
 
         {/* Overall progress */}
         <div className="card-felt relative p-5">
