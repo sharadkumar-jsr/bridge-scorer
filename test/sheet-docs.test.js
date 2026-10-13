@@ -73,17 +73,30 @@ test('PIN sheet: bold, large, columns Pair No. | Pair name | PIN, phantom exclud
   assert.deepEqual(tbl.body[0].map(c => c.text), ['Pair No.', 'Pair name', 'PIN']);
   assert.equal(tbl.body.length, 1 + 3);                         // header + 3 real pairs (phantom excluded)
   for (const row of tbl.body) for (const c of row.slice(0, 3)) {
-    assert.ok(c.fontSize >= 20, 'font size ' + c.fontSize);
+    assert.equal(c.fontSize, 24);
     assert.equal(c.alignment, 'center');
   }
   assert.equal(tbl.body[1][1].text, 'Anil & Rahul');           // single spaces around "&"
   assert.equal(tbl.body[1][1].bold, true);
 });
 
-test('PIN sheet stays on one page with 14 pairs (largest session: 7 tables)', async () => {
+test('PIN sheet: 24 pt and one page for 14 pairs with ordinary names', async () => {
+  const { renderPinsOnePage } = require('../pdf-render');
   const many = Array.from({ length: 14 }, (_, i) => ({
-    pair_number: i + 1, player1_name: 'Rakesh Sharma', player2_name: 'Gyan Prakash',
+    pair_number: i + 1, player1_name: 'Rakesh', player2_name: 'Gyan', is_phantom: false, pin: String(10 + i),
+  }));
+  const r = await renderPinsOnePage(session, many);
+  assert.equal(r.size, 24);
+  assert.equal(pageCount(r.buf), 1);
+});
+
+test('PIN sheet: very long names step the font down to stay on one page', async () => {
+  const { renderPinsOnePage } = require('../pdf-render');
+  const many = Array.from({ length: 14 }, (_, i) => ({
+    pair_number: i + 1, player1_name: 'Venkatesh Subramanian', player2_name: 'Gyanendra Prakash',
     is_phantom: false, pin: String(10 + i),
   }));
-  assert.equal(pageCount(await render(buildPinsDoc(session, many))), 1);
+  const r = await renderPinsOnePage(session, many);
+  assert.ok(r.size < 24 && r.size >= 12, 'size ' + r.size);
+  assert.equal(pageCount(r.buf), 1);
 });

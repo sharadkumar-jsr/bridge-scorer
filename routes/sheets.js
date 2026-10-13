@@ -7,32 +7,10 @@
 // Both use the normal Authorization header (no token in the URL), so the PIN
 // sheet is never exposed through links or server logs.
 const router     = require('express').Router({ mergeParams: true });
-const PdfPrinter = require('pdfmake');
 const db         = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { buildTablesDoc, buildPinsDoc, fmtDate } = require('../sheet-docs');
-
-const printer = new PdfPrinter({
-  Helvetica: {
-    normal: 'Helvetica', bold: 'Helvetica-Bold',
-    italics: 'Helvetica-Oblique', bolditalics: 'Helvetica-BoldOblique',
-  },
-  Courier: {
-    normal: 'Courier', bold: 'Courier-Bold',
-    italics: 'Courier-Oblique', bolditalics: 'Courier-BoldOblique',
-  },
-});
-
-function renderPdf(docDef) {
-  return new Promise((resolve, reject) => {
-    const doc = printer.createPdfKitDocument(docDef);
-    const chunks = [];
-    doc.on('data', c => chunks.push(c));
-    doc.on('end',  () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-    doc.end();
-  });
-}
+const { buildTablesDoc, fmtDate } = require('../sheet-docs');
+const { renderPdf, renderPinsOnePage } = require('../pdf-render');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -102,7 +80,7 @@ router.get('/pins', requireAuth, async (req, res) => {
       [session.id]
     );
 
-    const buf = await renderPdf(buildPinsDoc(session, pairs));
+    const { buf } = await renderPinsOnePage(session, pairs);
     sendPdf(res, buf, `pair-pins-${dateStr(session.date)}.pdf`);
   } catch (err) {
     console.error('[sheets] pins error', err);

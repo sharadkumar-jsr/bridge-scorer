@@ -99,14 +99,13 @@ function buildTablesDoc(session, pairs, tables) {
 
 /**
  * PIN sheet — director only. Big, bold, centred table: Pair No. | Pair name | PIN.
- * Font size scales with the number of pairs so the sheet stays on one page.
+ * 24 pt bold by default (pdf-render.js steps it down only if the names would spill onto a second page).
  * @param {Array} pairs  session_pairs rows incl. pin
  */
-function buildPinsDoc(session, pairs) {
+function buildPinsDoc(session, pairs, size = 24) {
   const real = pairs.filter(p => !p.is_phantom).sort((a, b) => a.pair_number - b.pair_number);
   const n = real.length;
-  const size = n <= 8 ? 28 : n <= 11 ? 24 : 20;      // body font
-  const pad  = n <= 8 ? 9  : n <= 11 ? 7  : 5;       // vertical padding per row
+  const pad  = n <= 8 ? 9 : n <= 11 ? 6 : 3;          // vertical padding per row (tighter for bigger sessions)
 
   const cell = (text, extra = {}) => ({
     text, bold: true, alignment: 'center', fontSize: size, ...extra,
@@ -118,7 +117,7 @@ function buildPinsDoc(session, pairs) {
       color: '#b00020', alignment: 'center', margin: [0, 0, 0, 14] },
     {
       table: {
-        headerRows: 1, widths: [size >= 28 ? 150 : size >= 24 ? 130 : 105, '*', size >= 28 ? 100 : 80],
+        headerRows: 1, widths: [118, '*', 75],
         body: [
           [cell('Pair No.'), cell('Pair name'), cell('PIN')],
           ...real.map(p => [
