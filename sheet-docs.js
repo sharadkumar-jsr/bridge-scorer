@@ -94,88 +94,45 @@ function buildTablesDoc(session, pairs, tables) {
     },
   ];
 
-  // Alphabetical "find your seat" list — quickest way for a player to locate themselves.
-  const seatOf = {};
-  for (const t of tables) {
-    seatOf[t.ns_pair] = { table: t.table_number, side: 'North – South', bye: t.is_bye };
-    seatOf[t.ew_pair] = { table: t.table_number, side: 'East – West',  bye: t.is_bye };
-  }
-  const people = [];
-  for (const p of pairs) {
-    if (p.is_phantom) continue;
-    const seat = seatOf[p.pair_number];
-    if (!seat) continue;
-    for (const n of [p.player1_name, p.player2_name]) {
-      if (n && n.trim()) people.push({ name: n.trim(), pair: p.pair_number, ...seat });
-    }
-  }
-  people.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-
-  if (people.length) {
-    const h = (t, extra = {}) => ({ text: t, bold: true, color: GOLD, fillColor: DARK, fontSize: 10, ...extra });
-    content.push(
-      { text: 'Find your seat (A – Z)', fontSize: 15, bold: true, margin: [0, 0, 0, 8], pageBreak: 'before' },
-      {
-        table: {
-          headerRows: 1, widths: ['*', 40, 45, 110],
-          body: [
-            [h('Player'), h('Pair', { alignment: 'center' }), h('Table', { alignment: 'center' }), h('Seat')],
-            ...people.map((x, i) => {
-              const fill = i % 2 === 0 ? BAND : '#ffffff';
-              return [
-                { text: x.name, fontSize: 11, fillColor: fill },
-                { text: String(x.pair), alignment: 'center', fontSize: 11, fillColor: fill },
-                { text: x.bye ? '—' : String(x.table), alignment: 'center', bold: true, fontSize: 12, fillColor: fill },
-                { text: x.bye ? 'Sitting out (bye)' : x.side, fontSize: 11, fillColor: fill },
-              ];
-            }),
-          ],
-        },
-        layout: {
-          hLineColor: () => '#cccccc', vLineColor: () => '#cccccc', hLineWidth: () => 0.5, vLineWidth: () => 0.5,
-          paddingTop: () => 3, paddingBottom: () => 3,
-        },
-      },
-    );
-  }
-
   return docDefaults(content, 'Good luck and enjoy the game!');
 }
 
 /**
- * PIN sheet — director only.
+ * PIN sheet — director only. Big, bold, centred table: Pair No. | Pair name | PIN.
+ * Font size scales with the number of pairs so the sheet stays on one page.
  * @param {Array} pairs  session_pairs rows incl. pin
  */
 function buildPinsDoc(session, pairs) {
   const real = pairs.filter(p => !p.is_phantom).sort((a, b) => a.pair_number - b.pair_number);
-  const h = (t, extra = {}) => ({ text: t, bold: true, color: GOLD, fillColor: DARK, fontSize: 11, ...extra });
+  const n = real.length;
+  const size = n <= 8 ? 28 : n <= 11 ? 24 : 20;      // body font
+  const pad  = n <= 8 ? 9  : n <= 11 ? 7  : 5;       // vertical padding per row
+
+  const cell = (text, extra = {}) => ({
+    text, bold: true, alignment: 'center', fontSize: size, ...extra,
+  });
 
   const content = [
-    ...header('Pair PIN Codes', session,
-      'Players log in through the invite link by choosing their pair number and typing their 2-digit PIN.'),
-    {
-      text: 'CONFIDENTIAL — for the director only. Do not circulate this sheet to players.',
-      bold: true, color: '#b00020', fontSize: 11, margin: [0, 0, 0, 10],
-    },
+    { text: session.name, fontSize: 16, bold: true, alignment: 'center', margin: [0, 0, 0, 2] },
+    { text: 'Pair PIN Codes  —  Director copy, do not circulate', fontSize: 11, bold: true,
+      color: '#b00020', alignment: 'center', margin: [0, 0, 0, 14] },
     {
       table: {
-        headerRows: 1, widths: [45, '*', 80],
+        headerRows: 1, widths: [size >= 28 ? 150 : size >= 24 ? 130 : 105, '*', size >= 28 ? 100 : 80],
         body: [
-          [h('Pair', { alignment: 'center' }), h('Players'), h('PIN', { alignment: 'center' })],
-          ...real.map((p, i) => {
-            const fill = i % 2 === 0 ? BAND : '#ffffff';
-            const names = displayName(p);
-            return [
-              { text: String(p.pair_number), alignment: 'center', bold: true, fontSize: 14, fillColor: fill, margin: [0, 4, 0, 0] },
-              { text: names ?? '(names not entered)', fontSize: 13, color: names ? '#000' : GREY, fillColor: fill, margin: [0, 3, 0, 0] },
-              { text: p.pin ?? '—', alignment: 'center', font: 'Courier', bold: true, fontSize: 24, fillColor: fill },
-            ];
-          }),
+          [cell('Pair No.'), cell('Pair name'), cell('PIN')],
+          ...real.map(p => [
+            cell(String(p.pair_number)),
+            cell(displayName(p) ? displayName(p).replace(/\s{2,}&\s{2,}/, ' & ') : '(names not entered)',
+                 displayName(p) ? {} : { bold: false, italics: true, color: GREY }),
+            cell(p.pin ?? '—'),
+          ]),
         ],
       },
       layout: {
-        hLineColor: () => '#cccccc', vLineColor: () => '#cccccc', hLineWidth: () => 0.5, vLineWidth: () => 0.5,
-        paddingTop: () => 4, paddingBottom: () => 4,
+        hLineColor: () => '#000000', vLineColor: () => '#000000',
+        hLineWidth: () => 1, vLineWidth: () => 1,
+        paddingTop: () => pad, paddingBottom: () => pad, paddingLeft: () => 8, paddingRight: () => 8,
       },
     },
   ];

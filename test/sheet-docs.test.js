@@ -44,18 +44,19 @@ test('tables sheet renders to a real PDF and lists every real pair', async () =>
   assert.equal(buf.slice(0, 5).toString(), '%PDF-');
 });
 
-test('A–Z list contains only named players, sorted alphabetically', () => {
+const pageCount = (buf) => (buf.toString('latin1').match(/\/Type \/Page[^s]/g) || []).length;
+
+test('tables sheet is a single page (no second "find your seat" page)', async () => {
   const def = buildTablesDoc(session, pairs, tables);
-  const azTable = def.content.filter(c => c.table).pop();            // last table = A–Z list
-  const names = azTable.table.body.slice(1).map(row => row[0].text);
-  assert.deepEqual(names, ['Anil', 'Priya', 'Rahul']);
+  assert.equal(def.content.filter(c => c.table).length, 1);
+  assert.ok(!JSON.stringify(def).includes('pageBreak'));
+  assert.equal(pageCount(await render(def)), 1);
 });
 
 test('PIN sheet lists real pairs with PINs and excludes the phantom', async () => {
   const def = buildPinsDoc(session, pairs);
   const text = JSON.stringify(def);
-  for (const n of ['12', '34', '56', 'CONFIDENTIAL']) assert.ok(text.includes(n), n);
-  assert.ok(!text.includes('Pair 4'));
+  for (const n of ['12', '34', '56', 'do not circulate']) assert.ok(text.includes(n), n);
   const buf = await render(def);
   assert.equal(buf.slice(0, 5).toString(), '%PDF-');
 });
@@ -64,4 +65,25 @@ test('fmtDate reads a local-midnight Date without shifting the day', () => {
   const { fmtDate } = require('../sheet-docs');
   assert.equal(fmtDate(new Date(2026, 9, 13)), '2026-10-13');   // local midnight, any time zone
   assert.equal(fmtDate('2026-10-13T00:00:00.000Z'), '2026-10-13');
+});
+
+test('PIN sheet: bold, large, columns Pair No. | Pair name | PIN, phantom excluded', () => {
+  const def = buildPinsDoc(session, pairs);
+  const tbl = def.content.find(c => c.table).table;
+  assert.deepEqual(tbl.body[0].map(c => c.text), ['Pair No.', 'Pair name', 'PIN']);
+  assert.equal(tbl.body.length, 1 + 3);                         // header + 3 real pairs (phantom excluded)
+  for (const row of tbl.body) for (const c of row.slice(0, 3)) {
+    assert.ok(c.fontSize >= 20, 'font size ' + c.fontSize);
+    assert.equal(c.alignment, 'center');
+  }
+  assert.equal(tbl.body[1][1].text, 'Anil & Rahul');           // single spaces around "&"
+  assert.equal(tbl.body[1][1].bold, true);
+});
+
+test('PIN sheet stays on one page with 14 pairs (largest session: 7 tables)', async () => {
+  const many = Array.from({ length: 14 }, (_, i) => ({
+    pair_number: i + 1, player1_name: 'Rakesh Sharma', player2_name: 'Gyan Prakash',
+    is_phantom: false, pin: String(10 + i),
+  }));
+  assert.equal(pageCount(await render(buildPinsDoc(session, many))), 1);
 });
